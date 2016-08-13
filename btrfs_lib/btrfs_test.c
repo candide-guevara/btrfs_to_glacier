@@ -46,12 +46,16 @@ static void test_subvols(struct root_lookup *root_lookup)
 {
   int subvol_count = 0;
   struct rb_node *n;
+  char buffer[256] __attribute__((unused));
   n = rb_first(&root_lookup->root);
 
-  for(; n; subvol_count++) {
+  for(u8 mask=0; n; mask=0, subvol_count++) {
     struct root_info *entry;
     entry = rb_entry(n, struct root_info, rb_node);
-    assert(entry->uuid[0]);
+
+    for(u8 i=0; i<BTRFS_UUID_SIZE; mask|=entry->uuid[i], i++);
+    TRACE("mask = %d, uuid = %s", mask, uuid_to_str(entry->uuid, buffer));
+    assert(mask != 0);
     n = rb_next(n);
   }
 

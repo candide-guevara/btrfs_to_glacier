@@ -50,7 +50,7 @@ int visit_copy_only_valid_subvol (struct root_info* subvol, void* state) {
 
 char* uuid_to_str(u8* uuid, char *result) 
 {
-  if (uuid == NULL || *uuid == 0) {
+  if (uuid == NULL) {
     *result = '\0';
   }
   else {
