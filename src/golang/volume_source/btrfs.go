@@ -22,7 +22,7 @@ type btrfsVolumeManager struct {
   linuxutil     types.Linuxutil
   conf          *pb.Config
   k_sysinfo     *pb.SystemInfo
-  k_src_fs_list []*types.Filesystem
+  lazy_src_fs_list []*types.Filesystem
 }
 
 func get_system_info(linuxutil types.Linuxutil) *pb.SystemInfo {
@@ -40,16 +40,15 @@ func get_system_info(linuxutil types.Linuxutil) *pb.SystemInfo {
 func newBtrfsVolumeManager(
     conf *pb.Config, btrfsutil types.Btrfsutil, linuxutil types.Linuxutil,
     juggler types.BtrfsPathJuggler) (*btrfsVolumeManager, error) {
-  fs_list, err := juggler.CheckSourcesAndReturnCorrespondingFs(conf.Sources)
   mgr := btrfsVolumeManager{
     btrfsutil: btrfsutil,
     juggler: juggler,
     linuxutil: linuxutil,
     conf: conf,
     k_sysinfo: get_system_info(linuxutil),
-    k_src_fs_list: fs_list,
+    lazy_src_fs_list: nil,
   }
-  return &mgr, err
+  return &mgr, nil
 }
 
 func NewVolumeManager(
@@ -76,8 +75,16 @@ func NewVolumeAdmin(
   return newBtrfsVolumeManager(conf, btrfsutil, linuxutil, juggler)
 }
 
+// Defer finding errors with the filesystem after creation.
+func (self *btrfsVolumeManager) LazySrcFsList() ([]*types.Filesystem, error) {
+  if self.lazy_src_fs_list != nil { return self.lazy_src_fs_list, nil }
+  fs_list, err := self.juggler.CheckSourcesAndReturnCorrespondingFs(self.conf.Sources)
+  if err == nil { self.lazy_src_fs_list = fs_list }
+  return self.lazy_src_fs_list, err
+}
+
 func (self *btrfsVolumeManager) TestOnlySwapSrcFsList(fs_list []*types.Filesystem) {
-  self.k_src_fs_list = fs_list
+  self.lazy_src_fs_list = fs_list
 }
 func (self *btrfsVolumeManager) TestOnlySwapSysInfo(sysinfo *pb.SystemInfo) {
   self.k_sysinfo = sysinfo
@@ -127,7 +134,9 @@ func (self *btrfsVolumeManager) FindSnapHistoryConf(sv *pb.SubVolume) (*pb.Sourc
 
 func (self *btrfsVolumeManager) FindMountedPath(sv *pb.SubVolume) (string, error) {
   if len(sv.MountedPath) > 0 { return sv.MountedPath, nil }
-  _, _, from_path, err := self.juggler.FindTighterMountForSubVolume(self.k_src_fs_list, sv)
+  fs_list, err := self.LazySrcFsList()
+  if err != nil { return "", err }
+  _, _, from_path, err := self.juggler.FindTighterMountForSubVolume(fs_list, sv)
   return from_path, err
 }
 

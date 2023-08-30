@@ -49,6 +49,9 @@ func (self Factory) volAdmin() (types.VolumeAdmin, error) {
 }
 
 func (self Factory) BuildCodec() (types.Codec, error) {
+  if self.Conf.Encryption == nil {
+    return nil, fmt.Errorf("%w bad no encryption", ErrBadConfig)
+  }
   if self.Conf.Encryption.Type == pb.Encryption_NOOP {
     return new(encryption.NoopCodec), nil
   }
@@ -99,6 +102,9 @@ func (self *Factory) BuildBackupObjects(
 func (self *Factory) GetWorkflow(wf_name string) (types.ParsedWorkflow, error) {
   parsed_wf, err := util.WorkflowByName(self.Conf, wf_name)
   if err != nil { return parsed_wf, err }
+  if parsed_wf.Backup.Type == pb.Backup_MEM_EPHEMERAL {
+    return parsed_wf, nil
+  }
   if (parsed_wf.Backup.Aws == nil) == (parsed_wf.Backup.Fs == nil) {
     return parsed_wf, fmt.Errorf("%w only one of aws or fs config needed", ErrBadConfig)
   }

@@ -22,28 +22,28 @@ func SourceByName(conf *pb.Config, name string) (*pb.Source, error) {
   for _,s := range conf.Sources {
     if s.Name == name { return s, nil }
   }
-  return nil, fmt.Errorf("%w %s", ErrNotFoundByName, name)
+  return nil, fmt.Errorf("source %w %s", ErrNotFoundByName, name)
 }
 
 func RestoreByName(conf *pb.Config, name string) (*pb.Restore, error) {
   for _,r := range conf.Restores {
     if r.Name == name { return r, nil }
   }
-  return nil, fmt.Errorf("%w %s", ErrNotFoundByName, name)
+  return nil, fmt.Errorf("restore %w %s", ErrNotFoundByName, name)
 }
 
 func BackupByName(conf *pb.Config, name string) (*pb.Backup, error) {
   for _,b := range conf.Backups {
     if b.Name == name { return b, nil }
   }
-  return nil, fmt.Errorf("%w %s", ErrNotFoundByName, name)
+  return nil, fmt.Errorf("backup %w %s", ErrNotFoundByName, name)
 }
 
 func BackupAwsByName(conf *pb.Config, name string) (*pb.Backup_Aws, error) {
   for _,b := range conf.Backups {
     if b.Name == name && b.Aws != nil { return b.Aws, nil }
   }
-  return nil, fmt.Errorf("%w %s", ErrNotFoundByName, name)
+  return nil, fmt.Errorf("backup.aws %w %s", ErrNotFoundByName, name)
 }
 
 func BackupPartitionByUuid(conf *pb.Config, name string) (*pb.Backup_Partition, error) {
@@ -55,7 +55,7 @@ func BackupPartitionByUuid(conf *pb.Config, name string) (*pb.Backup_Partition, 
       }
     }
   }
-  return nil, fmt.Errorf("%w %s", ErrNotFoundByName, name)
+  return nil, fmt.Errorf("backup.partition %w %s", ErrNotFoundByName, name)
 }
 
 func AwsCredPerUserType(conf *pb.Config, utype pb.Aws_UserType) (*pb.Aws_Credential, error) {
@@ -70,22 +70,22 @@ func WorkflowByName(conf *pb.Config, name string) (types.ParsedWorkflow, error) 
   for _,w := range conf.Workflows {
     if w.Name == name { parsed.Wf = w ; continue }
   }
-  if parsed.Wf == nil { return parsed, fmt.Errorf("%w %s", ErrNotFoundByName, name) }
+  if parsed.Wf == nil { return parsed, fmt.Errorf("workflow %w %s", ErrNotFoundByName, name) }
 
   for _,s := range conf.Sources {
     if s.Name == parsed.Wf.Source { parsed.Source = s ; continue }
   }
-  if parsed.Source == nil { return parsed, fmt.Errorf("%w %s", ErrNotFoundByName, parsed.Wf.Source) }
+  if parsed.Source == nil { return parsed, fmt.Errorf("workflow.source %w %s", ErrNotFoundByName, parsed.Wf.Source) }
 
   for _,b := range conf.Backups {
     if b.Name == parsed.Wf.Backup { parsed.Backup = b ; continue }
   }
-  if parsed.Backup == nil { return parsed, fmt.Errorf("%w %s", ErrNotFoundByName, parsed.Wf.Backup) }
+  if parsed.Backup == nil { return parsed, fmt.Errorf("workflow.backup %w %s", ErrNotFoundByName, parsed.Wf.Backup) }
 
   for _,r := range conf.Restores {
     if r.Name == parsed.Wf.Restore { parsed.Restore = r ; continue }
   }
-  if parsed.Restore == nil { return parsed, fmt.Errorf("%w %s", ErrNotFoundByName, parsed.Wf.Restore) }
+  if parsed.Restore == nil { return parsed, fmt.Errorf("workflow.restore %w %s", ErrNotFoundByName, parsed.Wf.Restore) }
 
   return parsed, nil
 }

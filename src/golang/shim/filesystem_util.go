@@ -145,7 +145,7 @@ func (self *FilesystemUtil) parseProcMountInfoFile() ([]*types.MountEntry, error
 
     mnt_list = append(mnt_list, mnt)
   }
-  util.Infof("Found %d mount entries", len(mnt_list))
+  // util.Debugf("Found %d mount entries", len(mnt_list))
   return mnt_list, nil
 }
 

@@ -13,7 +13,8 @@ import (
 type SysUtilImpl struct {}
 
 func (self *SysUtilImpl) CombinedOutput(cmd *exec.Cmd) ([]byte, error) {
-  util.Debugf("%s %s", cmd.Path, strings.Join(cmd.Args, " "))
+  // util.Debugf("%s found at %s", cmd.Args[0], cmd.Path)
+  util.Debugf("%s", strings.Join(cmd.Args, " "))
   return cmd.CombinedOutput()
 }
 

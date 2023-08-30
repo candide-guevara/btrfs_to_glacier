@@ -89,6 +89,8 @@ func (self *BackupRestoreCanary) Setup(ctx context.Context) error {
     util.Infof("Setup twice is a noop: %s", self.State.Uuid)
     return nil
   }
+  drop_f := self.Lnxutil.GetRootOrDie()
+  defer drop_f()
   dev, err := self.Lnxutil.CreateLoopDevice(ctx, LoopDevSizeMb)
   if err != nil { return err }
 
@@ -108,26 +110,19 @@ func (self *BackupRestoreCanary) Setup(ctx context.Context) error {
   err = self.SetupPathsInNewFs()
   if err != nil { return err }
 
-  self.State.BackupMgr, err = self.Factory.BuildBackupManagerAdmin(ctx, self.ParsedWf.Backup.Name)
-  if err != nil { return err}
+  self.State.BackupMgr, err = self.Factory.BuildBackupManagerAdmin(ctx, self.ParsedWf.Wf.Name)
+  if err != nil { return err }
   err = self.State.BackupMgr.Setup(ctx)
   if err != nil { return err}
-
-  self.State.RestoreMgr, err = self.Factory.BuildRestoreManagerAdmin(ctx, self.ParsedWf.Restore.Name)
+  self.State.RestoreMgr, err = self.Factory.BuildRestoreManagerAdmin(ctx, self.ParsedWf.Wf.Name)
+  if err != nil { return err}
+  err = self.State.RestoreMgr.Setup(ctx)
   if err != nil { return err}
 
-  err = self.PrepareState(ctx)
-  return err
-}
-
-func (self *BackupRestoreCanary) PrepareState(ctx context.Context) error {
-  var err error
   self.State.Uuid, err = self.DetermineVolUuid(ctx)
   if err != nil { return err }
 
   if len(self.State.Uuid) < 1 {
-    drop_f := self.Lnxutil.GetRootOrDie()
-    defer drop_f()
     self.State.New = true
     err = self.Btrfs.CreateSubvolume(self.VolRoot())
     if err != nil { return err }
@@ -140,7 +135,7 @@ func (self *BackupRestoreCanary) PrepareState(ctx context.Context) error {
     self.State.Uuid, err = self.DetermineVolUuid(ctx)
     if err != nil { return err }
   }
-  return nil
+  return err
 }
 
 func (self *BackupRestoreCanary) DetermineVolUuid(ctx context.Context) (string, error) {
@@ -224,6 +219,8 @@ func (self *BackupRestoreCanary) TearDown(ctx context.Context) error {
   if self.State.BackupMgr != nil {
     backup_err = self.State.BackupMgr.TearDown(ctx)
   }
+  drop_f := self.Lnxutil.GetRootOrDie()
+  defer drop_f()
   if len(self.State.Fs.Mounts) > 0 {
     umount_err = self.Lnxutil.UMount(ctx, self.State.Fs.Uuid)
   }
@@ -241,8 +238,6 @@ func (self *BackupRestoreCanary) AppendSnapshotToValidationChain(
     ctx context.Context) (types.BackupPair, error) {
   result := types.BackupPair{}
   if self.State.TopSrcRestoredSnap == nil { return result, ErrMustRestoreBefore }
-  drop_f := self.Lnxutil.GetRootOrDie()
-  defer drop_f()
   if self.State.New {
     err := self.AppendDataToSubVolume()
     if err != nil { return result, err }
