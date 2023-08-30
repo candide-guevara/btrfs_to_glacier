@@ -115,13 +115,15 @@ func (*btrfsUtilImpl) toProtoSubVolume(
   return sv
 }
 
+// BE CAREFUL IT IS A TRAP!
+// `subvol.parent_id` has nothing to do with the parent subvol of the snapshot.
+// `subvol.parent_id` is only an indication of its location relative to the filesystem root.
+// aka BTRFS_FS_TREE_OBJECTID means it is at the root.
 func (self *btrfsUtilImpl) toProtoSnapOrSubvol(
     subvol *C.struct_btrfs_util_subvolume_info, tree_path string, mnt_path string) (*pb.SubVolume, error) {
-  //util.Debugf("tree_path=%s mnt_path=%s, parent_id=%v", tree_path, mnt_path, subvol.parent_id)
+  //util.Debugf("tree_path=%s mnt_path=%s\nsubvol=%#v\n\n", tree_path, mnt_path, subvol)
   snap := self.toProtoSubVolume(subvol, tree_path, mnt_path)
-  if subvol.parent_id != C.BTRFS_FS_TREE_OBJECTID {
-    snap.ParentUuid = bytesToUuid(subvol.parent_uuid)
-  }
+  snap.ParentUuid = bytesToUuid(subvol.parent_uuid)
   snap.ReadOnly = (subvol.flags & C.BTRFS_ROOT_SUBVOL_RDONLY) > 0
   return snap, nil
 }

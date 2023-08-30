@@ -63,13 +63,13 @@ func ValidateSubVolume(check CheckType, sv *pb.SubVolume) error {
       if sv.CreatedTs == 0 { return util.PbErrorf("Volume no creation timestamp: %v", sv) }
       return ValidateSystemInfo(sv.OriginSys)
     case CheckSnapNoContent:
-      if sv.ParentUuid == "" { return util.PbErrorf("Snapshot no parent uuid: %v", sv) }
+      if sv.ParentUuid == "" { return util.PbErrorf("Snapshot no parent: %v", sv) }
       if sv.GenAtCreation == 0 { return util.PbErrorf("Snapshot no creation generation: %v", sv) }
       if sv.CreatedTs == 0 { return util.PbErrorf("Snapshot no creation timestamp: %v", sv) }
       if sv.ReadOnly == false { return util.PbErrorf("Snapshot cannot be writable: %v", sv) }
       return ValidateSystemInfo(sv.OriginSys)
     case CheckSnapWithContent:
-      if sv.ParentUuid == "" { return util.PbErrorf("Snapshot no parent uuid: %v", sv) }
+      if sv.ParentUuid == "" { return util.PbErrorf("Snapshot no parent: %v", sv) }
       if sv.GenAtCreation == 0 { return util.PbErrorf("Snapshot no creation generation: %v", sv) }
       if sv.CreatedTs == 0 { return util.PbErrorf("Snapshot no creation timestamp: %v", sv) }
       if sv.ReadOnly == false { return util.PbErrorf("Snapshot cannot be writable: %v", sv) }
