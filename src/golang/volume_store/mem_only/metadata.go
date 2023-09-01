@@ -116,7 +116,7 @@ func (self *Metadata) AppendSnapshotToSeq(
   if new_seq.Volume.Uuid != snap.ParentUuid {
     return nil, util.PbErrorf("Sequence volume and snap parent do not match: %v, %v", new_seq, snap)
   }
-  if new_seq.Volume.CreatedTs >= snap.CreatedTs {
+  if new_seq.Volume.CreatedTs > snap.CreatedTs {
     return nil, util.PbErrorf("Sequence volume created after snap: %v, %v", new_seq, snap)
   }
 
