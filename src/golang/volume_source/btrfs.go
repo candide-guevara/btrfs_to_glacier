@@ -313,6 +313,10 @@ func (self *btrfsVolumeManager) ReceiveSendStream(
   if sv == nil {
     return nil, fmt.Errorf("No subvolume with received uuid '%s' got created", src_snap.Uuid)
   }
+  if len(sv.TreePath) < 1 {
+    return nil, fmt.Errorf("Expected TreePath is restored subvol")
+  }
+  sv.MountedPath = fpmod.Join(root_path, fpmod.Base(sv.TreePath))
   return sv, read_pipe.GetErr()
 }
 

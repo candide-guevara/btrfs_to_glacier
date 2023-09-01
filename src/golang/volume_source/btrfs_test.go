@@ -292,7 +292,7 @@ func TestReceiveSendStream(t *testing.T) {
   recv_path := juggler.UuidToMnt[btrfsutil.Snaps[1].Uuid].MountedPath
   mock_received := util.DummySnapshot(uuid.NewString(), "")
   mock_received.ReceivedUuid = btrfsutil.Snaps[1].Uuid
-  mock_received.MountedPath = fpmod.Join(recv_path, "recv_snap")
+  mock_received.MountedPath = fpmod.Join(recv_path, mock_received.Uuid)
   btrfsutil.Snaps = append(btrfsutil.Snaps, mock_received)
 
   sv, err := volmgr.ReceiveSendStream(ctx, recv_path, btrfsutil.Snaps[1], read_pipe)
