@@ -2,14 +2,23 @@ package encryption
 
 import (
   "context"
+  "fmt"
   "io"
 
+  pb "btrfs_to_glacier/messages"
   "btrfs_to_glacier/types"
   "btrfs_to_glacier/util"
 )
 
 // Does not encrypt, just forwards the input.
 type NoopCodec struct {}
+
+func NewNoopCodec(conf *pb.Config) (*NoopCodec, error) {
+  if len(conf.Encryption.Keys) > 0 {
+    return nil, fmt.Errorf("For NoopCodec config cannot hold encryption keys")
+  }
+  return new(NoopCodec), nil
+}
 
 func (self *NoopCodec) EncryptionHeaderLen() int { return 0 }
 
@@ -19,7 +28,7 @@ func (self *NoopCodec) CreateNewEncryptionKey() (types.PersistableKey, error) {
 }
 
 func (self *NoopCodec) CurrentKeyFingerprint() types.PersistableString {
-  return types.PersistableString{""}
+  return types.PersistableString{"noop_codec"}
 }
 
 func (self *NoopCodec) EncryptString(clear types.SecretString) types.PersistableString {
