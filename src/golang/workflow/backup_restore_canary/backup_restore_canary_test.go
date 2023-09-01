@@ -29,24 +29,21 @@ type Mocks struct {
   InitBackup  func(*mocks.BackupManager) error
 }
 
-func (self *Mocks) BuildBackupManagerAdmin(ctx context.Context,
-    backup_name string) (types.BackupManagerAdmin, error) {
+func (self *Mocks) BuildBackupAndRestoreMgr(
+    ctx context.Context, wf_name string) (types.BackupManagerAdmin, types.RestoreManagerAdmin, error) {
+  if wf_name != self.Conf.Workflows[0].Name {
+    return nil, nil, fmt.Errorf("bad wf name: %s", wf_name)
+  }
   parsed_wf, err := util.WorkflowByName(self.Conf, self.Conf.Workflows[0].Name)
-  if err != nil { return nil, err }
+  if err != nil { return nil, nil, err }
 
   self.BackupMgr.InitFromConfSource(parsed_wf.Source)
   if self.InitBackup != nil {
     err := self.InitBackup(self.BackupMgr)
-    if err != nil { return nil, err }
+    if err != nil { return nil, nil, err }
   }
-  return self.BackupMgr, nil
-}
-
-func (self *Mocks) BuildRestoreManagerAdmin(ctx context.Context,
-    dst_name string) (types.RestoreManagerAdmin, error) {
-  parsed_wf, err := util.WorkflowByName(self.Conf, self.Conf.Workflows[0].Name)
   self.RestoreMgr.InitFromConfRestore(parsed_wf.Restore)
-  return self.RestoreMgr, err
+  return self.BackupMgr, self.RestoreMgr, nil
 }
 
 func (self *Mocks) BuildBackupRestoreCanary(

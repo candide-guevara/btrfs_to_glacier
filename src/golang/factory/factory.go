@@ -137,6 +137,25 @@ func (self *Factory) BuildRestoreManagerAdmin(
   return mgr, err
 }
 
+// Implementation detail for canary since both BackupManager and RestoreManager
+// need to share the same metadata and backup storage objects.
+// Not added to the public interface on purpose.
+func (self *Factory) BuildBackupAndRestoreMgr(
+    ctx context.Context, wf_name string) (types.BackupManagerAdmin, types.RestoreManagerAdmin, error) {
+  wf, err := self.GetWorkflow(wf_name)
+  if err != nil { return nil, nil, err }
+  meta, content, err := self.BuildBackupObjects(ctx, wf.Backup)
+  if err != nil { return nil, nil, err }
+  vol_admin, err := self.volAdmin()
+  if err != nil { return nil, nil, err }
+
+  bck, err := backup_manager.NewBackupManagerAdmin(self.Conf, meta, content, vol_admin)
+  if err != nil { return nil, nil, err }
+  rst, err := restore_manager.NewRestoreManagerAdmin(self.Conf, wf.Restore.Name, meta, content, vol_admin)
+  if err != nil { return nil, nil, err }
+  return bck, rst, err
+}
+
 func (self *Factory) BuildBackupRestoreCanary(
     ctx context.Context, wf_name string) (types.BackupRestoreCanary, error) {
   return backup_restore_canary.NewBackupRestoreCanary(

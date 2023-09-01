@@ -27,6 +27,10 @@ var ErrValidateUuidFile = errors.New("validate_error_uuid_file")
 var ErrValidateNewDir = errors.New("validate_error_new_dir")
 var ErrValidateDelDir = errors.New("validate_error_del_dir")
 
+type DeferBuilder interface {
+  BuildBackupAndRestoreMgr(context.Context, string) (types.BackupManagerAdmin, types.RestoreManagerAdmin, error)
+}
+
 // Fields that may change value during the execution.
 type State struct {
   Fs                  *types.Filesystem
@@ -47,14 +51,14 @@ type BackupRestoreCanary struct {
   Lnxutil    types.Linuxutil
   // We use a factory to defer creation of backup and restore objects
   // since we need to create the filesystem first.
-  Factory    types.Factory
+  Factory    DeferBuilder
   ParsedWf   types.ParsedWorkflow
   State      *State
 }
 
 func NewBackupRestoreCanary(
     conf *pb.Config, wf_name string,
-    btrfs types.Btrfsutil, lnxutil types.Linuxutil, factory types.Factory) (types.BackupRestoreCanary, error) {
+    btrfs types.Btrfsutil, lnxutil types.Linuxutil, factory DeferBuilder) (types.BackupRestoreCanary, error) {
   parsed_wf, err := util.WorkflowByName(conf, wf_name)
   if err != nil { return nil, err }
   if len(parsed_wf.Source.Paths) != 1 {
@@ -110,11 +114,10 @@ func (self *BackupRestoreCanary) Setup(ctx context.Context) error {
   err = self.SetupPathsInNewFs()
   if err != nil { return err }
 
-  self.State.BackupMgr, err = self.Factory.BuildBackupManagerAdmin(ctx, self.ParsedWf.Wf.Name)
+  self.State.BackupMgr, self.State.RestoreMgr, err = self.Factory.BuildBackupAndRestoreMgr(
+                                                       ctx, self.ParsedWf.Wf.Name)
   if err != nil { return err }
   err = self.State.BackupMgr.Setup(ctx)
-  if err != nil { return err}
-  self.State.RestoreMgr, err = self.Factory.BuildRestoreManagerAdmin(ctx, self.ParsedWf.Wf.Name)
   if err != nil { return err}
   err = self.State.RestoreMgr.Setup(ctx)
   if err != nil { return err}
@@ -135,6 +138,7 @@ func (self *BackupRestoreCanary) Setup(ctx context.Context) error {
     self.State.Uuid, err = self.DetermineVolUuid(ctx)
     if err != nil { return err }
   }
+  if len(self.State.Uuid) < 1 { return fmt.Errorf("self.State.Uuid == ''") }
   return err
 }
 
