@@ -2,8 +2,10 @@ package main
 
 import (
   "context"
+  "fmt"
   fpmod "path/filepath"
   "os"
+  "syscall"
   "time"
 
   "btrfs_to_glacier/shim"
@@ -121,67 +123,83 @@ func (self *TestFilesystemUtil) TestListUMount_Mount_Cycle() {
   util.EqualsOrDie("Bad mount entry", got_mnt, expect_mnt)
 }
 
-func (self *TestFilesystemUtil) TestCreateLoopDevice() *types.Device {
+func DoesNotBelongToRoot(path string) error {
+  var stat syscall.Stat_t
+  err := syscall.Stat(path, &stat)
+  if err != nil {
+    return fmt.Errorf("syscall.stat: %w", err)
+  }
+  if stat.Uid == shim.ROOT_UID {
+    return fmt.Errorf("owner is root: %s", path)
+  }
+  return nil
+}
+
+func (self *TestFilesystemUtil) TestCreateLoopDevice() (*types.Device, error) {
   if !self.linuxutil.IsCapSysAdmin() {
     util.Warnf("TestFilesystemUtil_TestCreateLoopDevice needs CAP_SYS_ADMIN")
-    return nil
+    return nil, nil
   }
 
   dev, err := self.linuxutil.CreateLoopDevice(context.TODO(), 32)
-  if err != nil { util.Fatalf("linuxutil.CreateLoopDevice: %v", err) }
+  if err != nil { return nil, fmt.Errorf("linuxutil.CreateLoopDevice: %w", err) }
   util.Debugf("New loop device: %s", util.AsJson(dev))
 
-  if !util.Exists(dev.LoopFile) { util.Fatalf("Backing file not created: '%s'", dev.LoopFile) }
-  return dev
+  if !util.Exists(dev.LoopFile) {
+    return dev, fmt.Errorf("Backing file not created: '%s'", dev.LoopFile)
+  }
+  return dev, DoesNotBelongToRoot(dev.LoopFile)
 }
 
-func WaitForItem(path string, wait_for_creation bool) {
+func WaitForItem(path string, wait_for_creation bool) error {
   condition := func() bool {
     existance := util.Exists(path)
     return (existance || wait_for_creation) && !(existance && wait_for_creation) // xor
   }
   for i := 0; condition(); i += 1 {
-    if i > 100 { util.Fatalf("Timeout wait_for_creation:%v path:%s'", wait_for_creation, path) }
+    if i > 100 { return fmt.Errorf("Timeout wait_for_creation:%v path:%s'", wait_for_creation, path) }
     time.Sleep(util.LargeTimeout)
   }
+  return nil
 }
 
-func (self *TestFilesystemUtil) TestCreateBtrfsFilesystem(dev *types.Device) string {
+func (self *TestFilesystemUtil) TestCreateBtrfsFilesystem(dev *types.Device) (string, error) {
   if !self.linuxutil.IsCapSysAdmin() {
     util.Warnf("TestFilesystemUtil_TestCreateBtrfsFilesystem needs CAP_SYS_ADMIN")
-    return ""
+    return "", nil
   }
+  if dev == nil { return "", nil }
 
   label := uuid.NewString()
   fs, err := self.linuxutil.CreateBtrfsFilesystem(context.TODO(), dev, label, "--mixed")
-  if err != nil { util.Fatalf("linuxutil.CreateBtrfsFilesystem: %v", err) }
+  if err != nil { return "", fmt.Errorf("linuxutil.CreateBtrfsFilesystem: %w", err) }
   util.Debugf("New filesystem: %s", util.AsJson(fs))
 
-  if len(fs.Uuid) < 1 { util.Fatalf("Empty uuid") }
+  if len(fs.Uuid) < 1 { return "", fmt.Errorf("Empty uuid") }
   util.EqualsOrDie("Bad fs label", fs.Label, label)
   util.EqualsOrDie("There should not be any mount", len(fs.Mounts), 0)
   util.EqualsOrDie("There should only be 1 device", len(fs.Devices), 1)
   util.EqualsOrDie("Bad device", fs.Devices[0].Name, dev.Name)
 
   _, err = self.linuxutil.CreateBtrfsFilesystem(context.TODO(), dev, label, "--mixed")
-  if err == nil { util.Fatalf("Cannot overwrite filesystem in device") }
-  return fs.Uuid
+  if err == nil { return "", fmt.Errorf("Cannot overwrite filesystem in device") }
+  return fs.Uuid, nil
 }
 
-func (self *TestFilesystemUtil) TestLoopdevMountUmount(fs_uuid string) {
+func (self *TestFilesystemUtil) TestLoopdevMountUmount(fs_uuid string) error {
   if !self.linuxutil.IsCapSysAdmin() {
     util.Warnf("TestFilesystemUtil_TestLoopdevMountUmount needs CAP_SYS_ADMIN")
-    return
+    return nil
   }
   target_mnt, err := os.MkdirTemp("", "TestLoopdevMountUmount")
-	if err != nil { util.Fatalf("os.MkdirTemp: %v", err) }
+	if err != nil { return fmt.Errorf("os.MkdirTemp: %w", err) }
 
   got_mnt, err := self.linuxutil.Mount(context.TODO(), fs_uuid, target_mnt)
-  if err != nil { util.Fatalf("linuxutil.Mount: %v", err) }
+  if err != nil { return fmt.Errorf("linuxutil.Mount: %w", err) }
   fs_sys_path := fpmod.Join(types.SYS_FS_BTRFS, fs_uuid)
 
   mnt_list, err := self.linuxutil.ListBlockDevMounts()
-  if err != nil { util.Fatalf("linuxutil.ListBlockDevMounts: %v", err) }
+  if err != nil { return fmt.Errorf("linuxutil.ListBlockDevMounts: %w", err) }
   found := false
   for _,mnt := range mnt_list {
     if mnt.MountedPath == target_mnt {
@@ -190,26 +208,28 @@ func (self *TestFilesystemUtil) TestLoopdevMountUmount(fs_uuid string) {
       break 
     }
   }
-  if !found { util.Fatalf("Nothing mounted at '%s'", target_mnt) }
+  if !found { return fmt.Errorf("Nothing mounted at '%s'", target_mnt) }
+  root_err := DoesNotBelongToRoot(target_mnt)
 
   err = self.linuxutil.UMount(context.TODO(), fs_uuid)
-  if err != nil { util.Fatalf("linuxutil.UMount: %v", err) }
+  if err != nil { return fmt.Errorf("linuxutil.UMount: %v", err) }
 
-  WaitForItem(fs_sys_path, false)
+  err = WaitForItem(fs_sys_path, false)
   util.RemoveAll(target_mnt)
+  return util.Coalesce(root_err, err)
 }
 
-func (self *TestFilesystemUtil) TestDeleteLoopDevice(dev *types.Device) {
+func (self *TestFilesystemUtil) TestDeleteLoopDevice(dev *types.Device) error {
   if !self.linuxutil.IsCapSysAdmin() {
     util.Warnf("TestFilesystemUtil_TestDeleteLoopDevice needs CAP_SYS_ADMIN")
-    return
+    return nil
   }
   err := self.linuxutil.DeleteLoopDevice(context.TODO(), dev)
-  if err != nil { util.Fatalf("linuxutil.DeleteLoopDevice: %v", err) }
-  if util.Exists(dev.LoopFile) { util.Fatalf("Backing file should have been deleted") }
+  if err != nil { return fmt.Errorf("linuxutil.DeleteLoopDevice: %w", err) }
+  if util.Exists(dev.LoopFile) { return fmt.Errorf("Backing file should have been deleted") }
   backing_file_path := fpmod.Join(shim.SYS_BLOCK, dev.Name, "loop", "backing_file")
   // Loop device persist for a while in /sys
-  WaitForItem(backing_file_path, false)
+  return WaitForItem(backing_file_path, false)
 }
 
 func TestFilesystemUtil_AllFuncs(
@@ -225,10 +245,15 @@ func TestFilesystemUtil_AllFuncs(
   suite.TestListMount_Noop()
   suite.TestListMount_NoSuchDev()
   suite.TestListUMount_NoSuchDev()
-  dev := suite.TestCreateLoopDevice()
-  fs_uuid := suite.TestCreateBtrfsFilesystem(dev)
-  suite.TestLoopdevMountUmount(fs_uuid)
-  suite.TestDeleteLoopDevice(dev)
+
+  dev, create_err := suite.TestCreateLoopDevice()
+  fs_uuid, fs_err := suite.TestCreateBtrfsFilesystem(dev)
+  mount_err := suite.TestLoopdevMountUmount(fs_uuid)
+  del_err := suite.TestDeleteLoopDevice(dev)
+  util.Debugf("\ncreate_err:%v\nfs_err:%v\nmount_err:%v\ndel_err:%v",
+              create_err, fs_err, mount_err, del_err)
+  final_err := util.Coalesce(create_err, fs_err, mount_err, del_err)
+  if final_err != nil { util.Fatalf("%v", final_err) }
   // Special snowflake test, do not run automatically
   //suite.TestListUMount_Mount_Cycle()
 }

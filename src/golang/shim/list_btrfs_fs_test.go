@@ -9,11 +9,10 @@ import (
   "testing"
 
   "btrfs_to_glacier/types"
-  "btrfs_to_glacier/types/mocks"
   "btrfs_to_glacier/util"
 )
 
-type SysUtilMock_ForBtrfs struct { *mocks.SysUtil }
+type SysUtilMock_ForBtrfs struct { *SysUtilForTest }
 
 func (self *SysUtilMock_ForBtrfs) ReadAsciiFile(
     dir string, name string, allow_ctrl bool) (string, error) {
@@ -50,55 +49,55 @@ func (self *SysUtilMock_ForBtrfs) ReadDir(dir string) ([]os.DirEntry, error) {
   switch dir {
     case DEV_BLOCK:
       return []fs.DirEntry{
-        &mocks.DirEntry{ Leaf:"259:0", Mode:fs.ModeSymlink, },
-        &mocks.DirEntry{ Leaf:"259:1", Mode:fs.ModeSymlink, },
-        &mocks.DirEntry{ Leaf:"259:2", Mode:fs.ModeSymlink, },
-        &mocks.DirEntry{ Leaf:"260:0", Mode:fs.ModeSymlink, },
-        &mocks.DirEntry{ Leaf:"260:1", Mode:fs.ModeSymlink, },
+        &DirEntry{ Leaf:"259:0", Mode:fs.ModeSymlink, },
+        &DirEntry{ Leaf:"259:1", Mode:fs.ModeSymlink, },
+        &DirEntry{ Leaf:"259:2", Mode:fs.ModeSymlink, },
+        &DirEntry{ Leaf:"260:0", Mode:fs.ModeSymlink, },
+        &DirEntry{ Leaf:"260:1", Mode:fs.ModeSymlink, },
       }, nil
     case DEV_BY_PART:
       return []fs.DirEntry{
-        &mocks.DirEntry{ Leaf:"gpt-uuid-sdb2", Mode:fs.ModeSymlink, },
-        &mocks.DirEntry{ Leaf:"gpt-uuid-sdb3", Mode:fs.ModeSymlink, },
-        &mocks.DirEntry{ Leaf:"gpt-uuid-sdc1", Mode:fs.ModeSymlink, },
-        &mocks.DirEntry{ Leaf:"gpt-uuid-loop111p1", Mode:fs.ModeSymlink, },
-        &mocks.DirEntry{ Leaf:"gpt-uuid-loop111p2", Mode:fs.ModeSymlink, },
+        &DirEntry{ Leaf:"gpt-uuid-sdb2", Mode:fs.ModeSymlink, },
+        &DirEntry{ Leaf:"gpt-uuid-sdb3", Mode:fs.ModeSymlink, },
+        &DirEntry{ Leaf:"gpt-uuid-sdc1", Mode:fs.ModeSymlink, },
+        &DirEntry{ Leaf:"gpt-uuid-loop111p1", Mode:fs.ModeSymlink, },
+        &DirEntry{ Leaf:"gpt-uuid-loop111p2", Mode:fs.ModeSymlink, },
       }, nil
     case DEV_BY_UUID:
       return []fs.DirEntry{
-        &mocks.DirEntry{ Leaf:"fs-uuid-sdb2", Mode:fs.ModeSymlink, },
-        &mocks.DirEntry{ Leaf:"fs-uuid-sdb3", Mode:fs.ModeSymlink, },
-        &mocks.DirEntry{ Leaf:"fs-uuid-sdc1", Mode:fs.ModeSymlink, },
-        &mocks.DirEntry{ Leaf:"fs-uuid-loop111p1", Mode:fs.ModeSymlink, },
-        &mocks.DirEntry{ Leaf:"fs-uuid-loop111p2", Mode:fs.ModeSymlink, },
+        &DirEntry{ Leaf:"fs-uuid-sdb2", Mode:fs.ModeSymlink, },
+        &DirEntry{ Leaf:"fs-uuid-sdb3", Mode:fs.ModeSymlink, },
+        &DirEntry{ Leaf:"fs-uuid-sdc1", Mode:fs.ModeSymlink, },
+        &DirEntry{ Leaf:"fs-uuid-loop111p1", Mode:fs.ModeSymlink, },
+        &DirEntry{ Leaf:"fs-uuid-loop111p2", Mode:fs.ModeSymlink, },
       }, nil
     case DEV_MAPPER:
       return []fs.DirEntry{}, nil
     case types.SYS_FS_BTRFS:
       return []fs.DirEntry{
-        &mocks.DirEntry{ Leaf:"fs1_uuid", Mode:fs.ModeDir, },
-        &mocks.DirEntry{ Leaf:"fs2_uuid", Mode:fs.ModeDir, },
-        &mocks.DirEntry{ Leaf:"fs3_uuid", Mode:fs.ModeDir, },
+        &DirEntry{ Leaf:"fs1_uuid", Mode:fs.ModeDir, },
+        &DirEntry{ Leaf:"fs2_uuid", Mode:fs.ModeDir, },
+        &DirEntry{ Leaf:"fs3_uuid", Mode:fs.ModeDir, },
       }, nil
     case fpmod.Join(types.SYS_FS_BTRFS, "fs1_uuid"): fallthrough
     case fpmod.Join(types.SYS_FS_BTRFS, "fs2_uuid"): fallthrough
     case fpmod.Join(types.SYS_FS_BTRFS, "fs3_uuid"):
       return []fs.DirEntry{
-        &mocks.DirEntry{ Leaf:types.SYS_FS_UUID },
-        &mocks.DirEntry{ Leaf:types.SYS_FS_LABEL },
-        &mocks.DirEntry{ Leaf:types.SYS_FS_DEVICE_DIR, Mode:fs.ModeDir, },
+        &DirEntry{ Leaf:types.SYS_FS_UUID },
+        &DirEntry{ Leaf:types.SYS_FS_LABEL },
+        &DirEntry{ Leaf:types.SYS_FS_DEVICE_DIR, Mode:fs.ModeDir, },
       }, nil
     case SYS_BLOCK:
       return []fs.DirEntry{}, nil
     case fpmod.Join(types.SYS_FS_BTRFS, "fs1_uuid", types.SYS_FS_DEVICE_DIR):
       return []fs.DirEntry{
-        &mocks.DirEntry{ Leaf:"sdb2", Mode:fs.ModeSymlink },
-        &mocks.DirEntry{ Leaf:"sdc1", Mode:fs.ModeSymlink },
+        &DirEntry{ Leaf:"sdb2", Mode:fs.ModeSymlink },
+        &DirEntry{ Leaf:"sdc1", Mode:fs.ModeSymlink },
       }, nil
     case fpmod.Join(types.SYS_FS_BTRFS, "fs2_uuid", types.SYS_FS_DEVICE_DIR):
-      return []fs.DirEntry{ &mocks.DirEntry{ Leaf:"loop111p1", Mode:fs.ModeSymlink }, }, nil
+      return []fs.DirEntry{ &DirEntry{ Leaf:"loop111p1", Mode:fs.ModeSymlink }, }, nil
     case fpmod.Join(types.SYS_FS_BTRFS, "fs3_uuid", types.SYS_FS_DEVICE_DIR):
-      return []fs.DirEntry{ &mocks.DirEntry{ Leaf:"loop111p2", Mode:fs.ModeSymlink }, }, nil
+      return []fs.DirEntry{ &DirEntry{ Leaf:"loop111p2", Mode:fs.ModeSymlink }, }, nil
   }
   return nil, fmt.Errorf("ReadDir '%s' not found in mock", dir)
 }
@@ -129,7 +128,7 @@ func (self *SysUtilMock_ForBtrfs) EvalSymlinks(path string) (string, error) {
 }
 
 func TestListBtrfsFilesystems(t *testing.T) {
-  linuxutils := &FilesystemUtil{ SysUtil: &SysUtilMock_ForBtrfs{}, }
+  linuxutils := &Linuxutil{ SysUtilIf: &SysUtilMock_ForBtrfs{}, }
   fs_list,err := linuxutils.ListBtrfsFilesystems()
   if err != nil { t.Errorf("ListBtrfsFilesystems: %v", err) }
   if len(fs_list) != 3 { t.Errorf("found wrong number of filesystems") }

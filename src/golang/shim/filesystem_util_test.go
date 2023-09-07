@@ -2,27 +2,204 @@ package shim
 
 import (
   "context"
+  "fmt"
   "io/fs"
+  "math/rand"
   "os"
   "os/exec"
+  fpmod "path/filepath"
   "regexp"
   "strings"
   "testing"
 
   "btrfs_to_glacier/types"
-  "btrfs_to_glacier/types/mocks"
   "btrfs_to_glacier/util"
+
+  "github.com/google/uuid"
 )
 
-func buildFilesystemUtil(t *testing.T) (*FilesystemUtil, *mocks.SysUtil) {
-  sys_util := &mocks.SysUtil{
+type SysUtilForTest struct {
+  FileContent map[string]string
+  DirContent  map[string][]os.DirEntry
+  LinkTarget  map[string]string
+  CmdOutput   map[string]string
+  Removed     map[string]bool
+  RunOnCmd    func(*exec.Cmd)
+  Err error
+}
+
+type DirEntry struct {
+  Leaf string
+  Mode fs.FileMode
+}
+
+func (self *DirEntry) Name() string { return self.Leaf }
+func (self *DirEntry) IsDir() bool { return fs.ModeDir & self.Mode != 0 }
+func (self *DirEntry) Type() fs.FileMode { return self.Mode }
+func (self *DirEntry) Info() (fs.FileInfo, error) { return nil, nil }
+
+func (self *SysUtilForTest) ReadAsciiFile(
+    dir string, name string, allow_ctrl bool) (string, error) {
+  path := fpmod.Join(dir, name)
+  if content,found := self.FileContent[path]; found {
+    return content, self.Err
+  }
+  return "", fmt.Errorf("%w ReadAsciiFile '%s'", fs.ErrNotExist, path)
+}
+
+func (self *SysUtilForTest) ReadDir(dir string) ([]os.DirEntry, error) {
+  if content,found := self.DirContent[dir]; found {
+    return content, self.Err
+  }
+  return nil, fmt.Errorf("%w ReadDir '%s'", fs.ErrNotExist, dir)
+}
+
+func (self *SysUtilForTest) IsDir(dir string) bool {
+  _,found := self.DirContent[dir]
+  return found
+}
+
+func (self *SysUtilForTest) EvalSymlinks(path string) (string, error) {
+  if content,found := self.LinkTarget[path]; found {
+    return content, self.Err
+  }
+  return "", fmt.Errorf("%w EvalSymlinks '%s'", fs.ErrNotExist, path)
+}
+
+func (self *SysUtilForTest) AddBtrfsFilesystem(
+    fs_uuid string, devname string, target string) *types.Filesystem {
+  label := uuid.NewString()
+  mount := self.AddMount(fs_uuid, devname, target)
+  self.DirContent[types.SYS_FS_BTRFS] = append(
+    self.DirContent[types.SYS_FS_BTRFS],
+    &DirEntry{ Leaf:fs_uuid, Mode:fs.ModeDir, })
+  sys_path := fpmod.Join(types.SYS_FS_BTRFS, fs_uuid)
+  self.DirContent[sys_path] = append(
+    self.DirContent[sys_path],
+    &DirEntry{ Leaf:types.SYS_FS_LABEL, Mode:0, },
+    &DirEntry{ Leaf:types.SYS_FS_UUID, Mode:0, },
+    &DirEntry{ Leaf:types.SYS_FS_DEVICE_DIR, Mode:fs.ModeDir, })
+  sys_devs := fpmod.Join(sys_path, types.SYS_FS_DEVICE_DIR)
+  self.DirContent[sys_devs] = append(
+    self.DirContent[sys_devs],
+    &DirEntry{ Leaf:mount.Device.Name, Mode:fs.ModeSymlink, })
+  self.FileContent[sys_path + "/" + types.SYS_FS_LABEL] = label
+  self.FileContent[sys_path + "/" + types.SYS_FS_UUID] = fs_uuid
+  return &types.Filesystem{
+    Uuid: fs_uuid,
+    Label: label,
+    Devices: []*types.Device{ mount.Device, },
+    Mounts: []*types.MountEntry{ mount, },
+  }
+}
+
+func (self *SysUtilForTest) AddMount(
+    fs_uuid string, devname string, target string) *types.MountEntry {
+  dev := self.AddDevice(devname)
+  dev.FsUuid = fs_uuid
+  id := rand.Intn(256)
+  maj_min := fmt.Sprintf("%d:%d", dev.Major, dev.Minor)
+  self.FileContent["/proc/self/mountinfo"] = fmt.Sprintf(
+    "%s\n%d %d %s / %s rw bla - ext4 /dev/%s rw\n",
+    self.FileContent["/proc/self/mountinfo"],
+    id, rand.Intn(256), maj_min, target, devname)
+
+  self.DirContent["/dev/disk/by-uuid"] = append(
+    self.DirContent["/dev/disk/by-uuid"],
+    &DirEntry{ Leaf:fs_uuid, Mode:fs.ModeSymlink, })
+  self.LinkTarget["/dev/disk/by-uuid/"+fs_uuid] = "/dev/"+devname
+  return &types.MountEntry{
+    Id: id,
+    Device: dev,
+    TreePath: "/",
+    MountedPath: target, 
+    FsType: "ext4",
+    Options: map[string]string{},
+  }
+}
+
+func (self *SysUtilForTest) AddDevice(dev string) *types.Device {
+  min, maj := rand.Intn(256), rand.Intn(256)
+  maj_min := fmt.Sprintf("%d:%d", maj, min)
+
+  self.DirContent["/dev/disk/by-partuuid"] = append(
+    self.DirContent["/dev/disk/by-partuuid"],
+    &DirEntry{ Leaf:"gpt-uuid-"+dev, Mode:fs.ModeSymlink, })
+  self.LinkTarget["/dev/disk/by-partuuid/gpt-uuid-"+dev] = "/dev/"+dev
+
+  self.DirContent["/dev/block"] = append(
+    self.DirContent["/dev/block"],
+    &DirEntry{ Leaf:maj_min, Mode:fs.ModeSymlink, })
+  self.LinkTarget["/dev/block/"+maj_min] = "/dev/"+dev
+
+  create_empty := []string{"/dev/disk/by-uuid", "/dev/mapper", "/sys/block", }
+  for _,d := range create_empty {
+    if _,found := self.DirContent[d]; !found { self.DirContent[d] = []os.DirEntry{} }
+  }
+  return &types.Device{
+    Name: dev,
+    Minor: min, Major: maj,
+    GptUuid: "gpt-uuid-" + dev,
+  }
+}
+
+func (self *SysUtilForTest) AddLoopDev(dev string, backing_file string) {
+  self.DirContent["/sys/block"] = append(self.DirContent["/sys/block"],
+                                         &DirEntry{ Leaf:dev, Mode:fs.ModeSymlink, })
+  self.DirContent["/sys/block/" + dev] = []os.DirEntry{
+    &DirEntry{ Leaf:"loop", Mode:fs.ModeDir, },
+  }
+  self.DirContent["/sys/block/" + dev + "/loop"] = []os.DirEntry{
+    &DirEntry{ Leaf:"backing_file", Mode:0, },
+  }
+  self.FileContent["/sys/block/" + dev + "/loop/backing_file"] = backing_file
+}
+
+func (self *SysUtilForTest) CombinedOutput(cmd *exec.Cmd) ([]byte, error) {
+  if cmd == nil { util.Fatalf("cmd == nil") }
+  if self.RunOnCmd != nil { self.RunOnCmd(cmd) }
+  output, found := self.CmdOutput[fpmod.Base(cmd.Path)]
+  if !found && len(self.CmdOutput) > 0 {
+    return nil, fmt.Errorf("cmd '%s' not expected", cmd.Path)
+  }
+  return []byte(output), self.Err
+}
+
+func (self *SysUtilForTest) Remove(p string) error {
+  self.Removed[p] = true
+  return self.Err
+}
+
+func (self *SysUtilForTest) GetRealUser() (User, error) {
+  return User{ Name:"testuser", Uid:1000, Gid:1000, }, self.Err
+}
+
+func (self *SysUtilForTest) IsCapSysAdmin() bool { return false }
+
+func (self *SysUtilForTest) LinuxKernelVersion() (uint32, uint32) { return 0, 0 }
+
+func (self *SysUtilForTest) BtrfsProgsVersion() (uint32, uint32) { return 0, 0 }
+
+func (self *SysUtilForTest) ProjectVersion() string { return "" }
+
+func (self *SysUtilForTest) DropRoot() (func(), error) { return func() {}, self.Err }
+
+func (self *SysUtilForTest) GetRoot() (func(), error) { return func() {}, self.Err }
+
+func (self *SysUtilForTest) GetRootOrDie() func() { return func() {} }
+
+func (self *SysUtilForTest) Chown(string, User) error { return self.Err }
+
+
+func buildFilesystemUtil(t *testing.T) (*Linuxutil, *SysUtilForTest) {
+  sys_util := &SysUtilForTest{
     FileContent: make(map[string]string),
     DirContent: make(map[string][]os.DirEntry),
     LinkTarget: make(map[string]string),
     CmdOutput:  make(map[string]string),
     Removed:    make(map[string]bool),
   }
-  lu := &FilesystemUtil{ SysUtil:sys_util, }
+  lu := &Linuxutil{ SysUtilIf:sys_util, }
   return lu, sys_util
 }
 
@@ -45,17 +222,17 @@ func TestListMounts(t *testing.T) {
 498 37 0:44  /asubvol    /tmp/btrfs_mnt_3/asubvol   rw shared:261 - btrfs /dev/loop111p1 rw
 `
   fs_reader.DirContent["/dev/disk/by-partuuid"] = []os.DirEntry{
-    &mocks.DirEntry{ Leaf:"gpt-uuid-sda1", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"gpt-uuid-sda2", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"gpt-uuid-sda3", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"gpt-uuid-sda4", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"gpt-uuid-nvme0n1p1", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"gpt-uuid-nvme0n1p2", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"gpt-uuid-nvme0n1p3", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"gpt-uuid-nvme0n1p4", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"gpt-uuid-nvme1n1p1", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"gpt-uuid-loop111p1", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"gpt-uuid-loop111p2", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"gpt-uuid-sda1", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"gpt-uuid-sda2", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"gpt-uuid-sda3", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"gpt-uuid-sda4", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"gpt-uuid-nvme0n1p1", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"gpt-uuid-nvme0n1p2", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"gpt-uuid-nvme0n1p3", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"gpt-uuid-nvme0n1p4", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"gpt-uuid-nvme1n1p1", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"gpt-uuid-loop111p1", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"gpt-uuid-loop111p2", Mode:fs.ModeSymlink, },
   }
   fs_reader.LinkTarget["/dev/disk/by-partuuid/gpt-uuid-sda1"] = "/dev/sda1"
   fs_reader.LinkTarget["/dev/disk/by-partuuid/gpt-uuid-sda2"] = "/dev/sda2"
@@ -70,16 +247,16 @@ func TestListMounts(t *testing.T) {
   fs_reader.LinkTarget["/dev/disk/by-partuuid/gpt-uuid-loop111p2"] = "/dev/loop111p2"
 
   fs_reader.DirContent["/dev/disk/by-uuid"] = []os.DirEntry{
-    &mocks.DirEntry{ Leaf:"fs-uuid-sda1", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"fs-uuid-sda2", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"fs-uuid-sda3", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"fs-uuid-sda4", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"fs-uuid-nvme0n1p1", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"fs-uuid-nvme0n1p2", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"fs-uuid-nvme0n1p4", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"fs-uuid-loop111p1", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"fs-uuid-loop111p2", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"fs-uuid-dm-0", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"fs-uuid-sda1", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"fs-uuid-sda2", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"fs-uuid-sda3", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"fs-uuid-sda4", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"fs-uuid-nvme0n1p1", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"fs-uuid-nvme0n1p2", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"fs-uuid-nvme0n1p4", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"fs-uuid-loop111p1", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"fs-uuid-loop111p2", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"fs-uuid-dm-0", Mode:fs.ModeSymlink, },
   }
   fs_reader.LinkTarget["/dev/disk/by-uuid/fs-uuid-sda1"] = "/dev/sda1"
   fs_reader.LinkTarget["/dev/disk/by-uuid/fs-uuid-sda2"] = "/dev/sda2"
@@ -93,23 +270,23 @@ func TestListMounts(t *testing.T) {
   fs_reader.LinkTarget["/dev/disk/by-uuid/fs-uuid-dm-0"] = "/dev/dm-0"
 
   fs_reader.DirContent["/dev/block"] = []os.DirEntry{
-    &mocks.DirEntry{ Leaf:"254:0", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"259:0", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"259:1", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"259:2", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"259:3", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"259:5", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"259:6", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"259:7", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"259:8", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"7:0",   Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"7:1",   Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"7:111", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"8:0",   Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"8:1",   Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"8:2",   Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"8:3",   Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"8:4",   Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"254:0", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"259:0", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"259:1", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"259:2", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"259:3", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"259:5", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"259:6", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"259:7", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"259:8", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"7:0",   Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"7:1",   Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"7:111", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"8:0",   Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"8:1",   Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"8:2",   Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"8:3",   Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"8:4",   Mode:fs.ModeSymlink, },
   }
   fs_reader.LinkTarget["/dev/block/254:0"] = "/dev/dm-0"
   fs_reader.LinkTarget["/dev/block/259:0"] = "/dev/nvme1n1"
@@ -131,22 +308,22 @@ func TestListMounts(t *testing.T) {
   fs_reader.LinkTarget["/dev/block/8:4"]   = "/dev/sda4"
 
   fs_reader.DirContent["/dev/mapper"] = []os.DirEntry{
-    &mocks.DirEntry{ Leaf:"control", Mode:fs.ModeDir, },
-    &mocks.DirEntry{ Leaf:"mapper-group", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"control", Mode:fs.ModeDir, },
+    &DirEntry{ Leaf:"mapper-group", Mode:fs.ModeSymlink, },
   }
   fs_reader.LinkTarget["/dev/mapper/mapper-group"] = "/dev/dm-0"
 
   fs_reader.DirContent["/sys/block"] = []os.DirEntry{
-    &mocks.DirEntry{ Leaf:"sda", Mode:fs.ModeSymlink, },
-    &mocks.DirEntry{ Leaf:"loop111", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"sda", Mode:fs.ModeSymlink, },
+    &DirEntry{ Leaf:"loop111", Mode:fs.ModeSymlink, },
   }
   fs_reader.DirContent["/sys/block/loop111"] = []os.DirEntry{
-    &mocks.DirEntry{ Leaf:"loop", Mode:fs.ModeDir, },
-    &mocks.DirEntry{ Leaf:"loop111p1", Mode:fs.ModeDir, },
-    &mocks.DirEntry{ Leaf:"loop111p2", Mode:fs.ModeDir, },
+    &DirEntry{ Leaf:"loop", Mode:fs.ModeDir, },
+    &DirEntry{ Leaf:"loop111p1", Mode:fs.ModeDir, },
+    &DirEntry{ Leaf:"loop111p2", Mode:fs.ModeDir, },
   }
   fs_reader.DirContent["/sys/block/loop111/loop"] = []os.DirEntry{
-    &mocks.DirEntry{ Leaf:"backing_file", Mode:0, },
+    &DirEntry{ Leaf:"backing_file", Mode:0, },
   }
   fs_reader.FileContent["/sys/block/loop111/loop/backing_file"] = "/tmp/loopfile"
 

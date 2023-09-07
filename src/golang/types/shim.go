@@ -63,10 +63,11 @@ type Linuxutil interface {
   GetRootOrDie() func()
 
   // Mounts the device and checks it got mounted at desired path.
+  // Mounted tree will belong to the executing user.
   // If device is already mounted at target, this is a noop.
   // This method should only return once the mount is fully visible.
-  // The device needs to be mountable by the user in /etc/fstab.
-  // Requires CAP_SYS_ADMIN (but will not be acquired).
+  // Requires CAP_SYS_ADMIN (but will not be acquired)
+  // or device needs to be mountable by the user in /etc/fstab.
   Mount(context.Context, string, string) (*MountEntry, error)
   UMount(context.Context, string) error
   // Returns all mounts found on the host that are backed by a block device.
