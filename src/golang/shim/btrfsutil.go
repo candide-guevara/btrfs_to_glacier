@@ -272,7 +272,7 @@ func (self *btrfsUtilImpl) CreateSubvolume(sv_path string) error {
     return fmt.Errorf("btrfs_util_create_subvolume(%s): %s = %d",
                       sv_path, C.GoString(C.btrfs_util_strerror(stx)), stx)
   }
-  return nil
+  return self.linuxutil.ChownAsRealUser(sv_path)
 }
 
 func (self *btrfsUtilImpl) HelperCreateSnapshot(
@@ -291,6 +291,9 @@ func (self *btrfsUtilImpl) HelperCreateSnapshot(
   if stx != C.BTRFS_UTIL_OK {
     return fmt.Errorf("btrfs_util_create_snapshot(%s, %s, %d): %s = %d",
                       sv_path, snap_path, flags, C.GoString(C.btrfs_util_strerror(stx)), stx)
+  }
+  if (flags | C.BTRFS_UTIL_CREATE_SNAPSHOT_READ_ONLY) == 0 {
+    return self.linuxutil.ChownAsRealUser(snap_path)
   }
   return nil
 }

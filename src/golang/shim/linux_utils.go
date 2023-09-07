@@ -277,6 +277,13 @@ func (self *Linuxutil) ListBlockDevMounts() ([]*types.MountEntry, error) {
   return filter_mnts, nil
 }
 
+func (self *Linuxutil) ChownAsRealUser(path string) error {
+  ru, err := self.SysUtilIf.GetRealUser()
+  if err != nil { return err }
+  err = self.SysUtilIf.Chown(path, ru)
+  return err
+}
+
 func (self *Linuxutil) IsMounted(
     ctx context.Context, fs_uuid string, target string) (*types.MountEntry, error) {
   mnt_list, err := self.ListBlockDevMounts()
@@ -313,9 +320,7 @@ func (self *Linuxutil) Mount(
     mnt, err := self.IsMounted(ctx, fs_uuid, target)
     if err != nil { return mnt, err }
     if mnt != nil {
-      ru, err := self.SysUtilIf.GetRealUser()
-      if err != nil { return mnt, err }
-      err = self.SysUtilIf.Chown(mnt.MountedPath, ru)
+      err = self.ChownAsRealUser(mnt.MountedPath)
       return mnt, err
     }
     time.Sleep(util.MedTimeout)
@@ -351,9 +356,7 @@ func (self *Linuxutil) CreateLoopDevice(
                              fmt.Sprintf("of=%s", backing_file), fmt.Sprintf("bs=%dM", size_mb))
   if _, err := self.SysUtilIf.CombinedOutput(cmd); err != nil { return nil, err }
   bail_out := func(err error) (*types.Device, error) { self.SysUtilIf.Remove(backing_file); return nil, err }
-  ru, err := self.SysUtilIf.GetRealUser()
-  if err != nil { return bail_out(err) }
-  err = self.SysUtilIf.Chown(backing_file, ru)
+  err := self.ChownAsRealUser(backing_file)
   if err != nil { return bail_out(err) }
 
   cmd = exec.CommandContext(ctx, "losetup", "-f")

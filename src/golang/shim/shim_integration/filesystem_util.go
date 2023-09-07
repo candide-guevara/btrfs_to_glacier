@@ -5,7 +5,6 @@ import (
   "fmt"
   fpmod "path/filepath"
   "os"
-  "syscall"
   "time"
 
   "btrfs_to_glacier/shim"
@@ -121,18 +120,6 @@ func (self *TestFilesystemUtil) TestListUMount_Mount_Cycle() {
   if err != nil { util.Fatalf("linuxutil.Mount: %v", err) }
   util.Debugf("entry: %s", util.AsJson(got_mnt))
   util.EqualsOrDie("Bad mount entry", got_mnt, expect_mnt)
-}
-
-func DoesNotBelongToRoot(path string) error {
-  var stat syscall.Stat_t
-  err := syscall.Stat(path, &stat)
-  if err != nil {
-    return fmt.Errorf("syscall.stat: %w", err)
-  }
-  if stat.Uid == shim.ROOT_UID {
-    return fmt.Errorf("owner is root: %s", path)
-  }
-  return nil
 }
 
 func (self *TestFilesystemUtil) TestCreateLoopDevice() (*types.Device, error) {

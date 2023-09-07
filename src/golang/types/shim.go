@@ -61,6 +61,9 @@ type Linuxutil interface {
   // Returns a function that can be called to restore user permissions.
   GetRoot() (func(), error)
   GetRootOrDie() func()
+  // Sets new owner of file/dir path to be the real user.
+  // Noop if already owned by the real user.
+  ChownAsRealUser(string) error
 
   // Mounts the device and checks it got mounted at desired path.
   // Mounted tree will belong to the executing user.
@@ -131,9 +134,11 @@ type Btrfsutil interface {
   // Requires CAP_SYS_ADMIN.
   ReceiveSendStream(ctx context.Context, to_dir string, read_pipe ReadEndIf) error
   // Calls `btrfs_util_create_subvolume()` to new subvolume in `sv_path`.
+  // Sets the owner of the subvolume to the real user.
   // Requires CAP_SYS_ADMIN.
   CreateSubvolume(sv_path string) error
   // Calls `btrfs_util_create_snapshot()` to create a clone of subvol at `sv_path` in `clone_path`.
+  // Sets the owner of the subvolume to the real user.
   // Requires CAP_SYS_ADMIN.
   CreateClone(sv_path string, clone_path string) error
   // Calls `btrfs_util_create_snapshot()` to create a snapshot of `subvol` in `snap` path.

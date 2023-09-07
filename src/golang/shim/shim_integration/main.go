@@ -186,6 +186,8 @@ func (self *TestBtrfsUtil) TestCreateSubvolume() {
                         fmt.Sprintf("%s.%d", "TestCreateSubvolume", time.Now().Unix()))
   err := self.btrfsutil.CreateSubvolume(sv_path);
   if err != nil { util.Fatalf("btrfsutil.CreateSubvolume(%s) failed = %v", sv_path, err) }
+  err = DoesNotBelongToRoot(sv_path)
+  if err != nil { util.Fatalf("DoesNotBelongToRoot %v", err) }
 
   subvol, err := self.btrfsutil.SubVolumeInfo(sv_path);
   if err != nil { util.Fatalf("btrfsutil.SubvolumeInfo failed = %v", err) }
@@ -198,6 +200,8 @@ func (self *TestBtrfsUtil) TestCreateClone() {
                         fmt.Sprintf("%s.%d", "TestCreateClone", time.Now().Unix()))
   err := self.btrfsutil.CreateClone(subvol_flag, sv_path);
   if err != nil { util.Fatalf("btrfsutil.CreateClone(%s, %s) failed = %v", subvol_flag, sv_path, err) }
+  err = DoesNotBelongToRoot(sv_path)
+  if err != nil { util.Fatalf("DoesNotBelongToRoot %v", err) }
 
   subvol, err := self.btrfsutil.SubVolumeInfo(sv_path);
   if err != nil { util.Fatalf("btrfsutil.SubvolumeInfo failed = %v", err) }

@@ -169,6 +169,10 @@ func (self *BackupRestoreCanary) DetermineVolUuid(ctx context.Context) (string, 
 //                   # no files for the first snapshot
 func (self *BackupRestoreCanary) SetupPathsInNewFs() error {
   if util.Exists(self.VolRoot()) { return fmt.Errorf("Filesystem is not new: %s", self.VolRoot()) }
+
+  get_root, err := self.Lnxutil.DropRoot()
+  if err != nil { return err }
+  defer get_root()
   if err := os.Mkdir(self.RestoreRoot(), 0775); err != nil { return err }
   if err := os.Mkdir(self.SnapRoot(), 0775); err != nil { return err }
   return nil
@@ -206,6 +210,9 @@ func (self *BackupRestoreCanary) RestoredUuidFile() string {
 }
 
 func (self *BackupRestoreCanary) CreateFirstValidationChainItem() error {
+  get_root, err := self.Lnxutil.DropRoot()
+  if err != nil { return err }
+  defer get_root()
   if err := os.Mkdir(self.DelDir(), 0775); err != nil { return err }
   if err := os.Mkdir(self.NewDir(), 0775); err != nil { return err }
   f, err := os.Create(self.UuidFile())
@@ -430,13 +437,17 @@ func (self *BackupRestoreCanary) RestoreChainAndValidate(
   pairs, err := self.State.RestoreMgr.RestoreCurrentSequence(ctx, self.State.Uuid)
   if err != nil { return nil, err }
   if self.State.New {
-    if len(pairs) != 1 { util.Fatalf("expected only the initial snapshot, got: %v", pairs) }
+    if len(pairs) != 1 {
+      return nil, fmt.Errorf("expected only the initial snapshot, got: %v", pairs)
+    }
     self.State.RestoredSrcSnaps = nil
     self.State.TopSrcRestoredSnap = pairs[0].Src
     self.State.TopDstRestoredPath = pairs[0].Dst.MountedPath
     return pairs, self.ValidateEmptyChain()
   }
-  if len(pairs) < 2 { util.Fatalf("An existing chain should contain at least 2 snaps") }
+  if len(pairs) < 2 {
+    return nil, fmt.Errorf("An existing chain should contain at least 2 snaps")
+  }
   if self.State.TopSrcRestoredSnap != nil { return pairs, ErrCannotCallTwice }
 
   self.State.RestoredSrcSnaps = make([]*pb.SubVolume, 0, len(pairs))

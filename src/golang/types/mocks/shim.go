@@ -46,6 +46,7 @@ func (self *Linuxutil) BtrfsProgsVersion() (uint32, uint32) {
   return self.SysInfo.BtrfsUsrMajor, self.SysInfo.BtrfsUsrMinor
 }
 func (self *Linuxutil) ProjectVersion() string { return self.SysInfo.ToolGitCommit }
+func (self *Linuxutil) ChownAsRealUser(string) error { return self.ErrInject(self.ChownAsRealUser) }
 func (self *Linuxutil) DropRoot() (func(), error) { return func() {}, self.ErrInject(self.DropRoot) }
 func (self *Linuxutil) GetRoot() (func(), error) { return func() {}, self.ErrInject(self.GetRoot) }
 func (self *Linuxutil) GetRootOrDie() func() {
