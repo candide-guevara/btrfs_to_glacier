@@ -70,16 +70,11 @@ func (self *BackupManager) SeqForUuid(vol_uuid string) []*pb.SubVolume {
       snap_seq = append(snap_seq, proto.Clone(pair.Snap).(*pb.SubVolume))
     }
   }
-  //util.Debugf("SeqForUuid: %s -> %d", vol_uuid, len(snap_seq))
-  return snap_seq
-}
-
-func (self *BackupManager) SeqForCloneUuid(vol_uuid string) []*pb.SubVolume {
-  snap_seq := []*pb.SubVolume{}
   for _,pair := range self.ClonePairs {
-    if pair.Sv.Uuid != vol_uuid { continue }
+    if pair.Snap.ParentUuid != vol_uuid { continue }
     snap_seq = append(snap_seq, proto.Clone(pair.Snap).(*pb.SubVolume))
   }
+  //util.Debugf("SeqForUuid: %s -> %d", vol_uuid, len(snap_seq))
   return snap_seq
 }
 
@@ -141,8 +136,8 @@ type RestoreManager struct {
   RestoreRoot      string
   BackupMgr        *BackupManager
   PopulateRestore  PopulateRestoreF
-  RestoreCallVols  []string        // add vol_uuid for each call to RestoreCurrentSequence
-  RestoredSnaps    []*pb.SubVolume // all volumes restored so far
+  RestoreCallVols  []string                 // add vol_uuid for each call to RestoreCurrentSequence
+  RestoredSnaps    map[string]*pb.SubVolume // all volumes restored so far
   SetupCalled      bool
   TearCalled       bool
 }
@@ -207,6 +202,7 @@ func NewRestoreManager(bck *BackupManager) *RestoreManager {
     // This path does not exist, it should be replaced in `InitFromConfRestore`.
     RestoreRoot: fpmod.Join(os.TempDir(), uuid.NewString()),
     BackupMgr: bck,
+    RestoredSnaps: make(map[string]*pb.SubVolume),
   }
   _  = (types.RestoreManager)(mgr)
   return mgr
@@ -234,6 +230,7 @@ func (self *RestoreManager) ReadHeadAndSequenceMap(
   return heads, self.ErrInject(self.ReadHeadAndSequenceMap)
 }
 
+// Takes into account restored subvolumes in previous calls.
 func (self *RestoreManager) RestoreCurrentSequence(
     ctx context.Context, vol_uuid string) ([]types.RestorePair, error) {
   self.RestoreCallVols = append(self.RestoreCallVols, vol_uuid)
@@ -242,25 +239,31 @@ func (self *RestoreManager) RestoreCurrentSequence(
   if err != nil { return nil, err }
   pairs := make([]types.RestorePair, 0, len(seq))
   last_uuid := ""
+  start_actually_restored := 0
 
-  for _,src := range seq {
+  for i,src := range seq {
     dst := util.DummySnapshot(uuid.NewString(), last_uuid)
     dst.MountedPath = fpmod.Join(self.RestoreRoot, dst.Uuid)
     dst.ReceivedUuid = src.Uuid
     dst.Data = nil
+    if restored, found := self.RestoredSnaps[src.Uuid]; found {
+      dst = restored
+      start_actually_restored = i + 1
+    }
 
     pair := types.RestorePair{ Src:src, Dst:dst, }
+    //util.PbDebugf("RestoreCurrentSequence:\n%s\n%s", pair.Src, pair.Dst)
     pairs = append(pairs, pair)
-    self.RestoredSnaps = append(self.RestoredSnaps, proto.Clone(dst).(*pb.SubVolume))
+    self.RestoredSnaps[src.Uuid] = proto.Clone(dst).(*pb.SubVolume)
     last_uuid = dst.Uuid
 
+    if util.Exists(dst.MountedPath) { continue }
     if err := os.Mkdir(dst.MountedPath, fs.ModePerm); err != nil { return nil, err }
     if self.PopulateRestore != nil {
       if err := self.PopulateRestore(orig, pairs); err != nil { return nil, err }
     }
-    //util.PbDebugf("RestoreCurrentSequence:\n%s\n%s", pair.Src, pair.Dst)
   }
-  return pairs, self.ErrInject(self.RestoreCurrentSequence)
+  return pairs[start_actually_restored:], self.ErrInject(self.RestoreCurrentSequence)
 }
 
 func (self *RestoreManager) ObjCounts() RestoreCounts {

@@ -135,14 +135,15 @@ type Btrfsutil struct {
   Err        error
   DumpErr    error
   CreateDirs bool
-  Subvols    []*pb.SubVolume
+  Subvols    []*pb.SubVolume // includes clone since they are writtable
   Snaps      []*pb.SubVolume
+  Clones     []*pb.SubVolume
   DumpOps    *types.SendDumpOperations
   SendStream types.Pipe
   SubvolCreateCallback func(*pb.SubVolume) error
 }
 type BtrfsCounts struct {
-  Subvols, Snaps int
+  Subvols, Snaps, Clones int
 }
 
 func (self *Btrfsutil) GetSubVolumeTreePath(subvol *pb.SubVolume) (string, error) {
@@ -206,7 +207,7 @@ func (self *Btrfsutil) StartSendStream(
   if from == "" || to == "" { return nil, fmt.Errorf("StartSendStream bad args") }
   return self.SendStream.ReadEnd(), self.Err
 }
-func (self *Btrfsutil) CreateSubvolume(sv_path string) error {
+func (self *Btrfsutil) CreateSubvolumeHelper(sv_path string, is_clone bool) error {
   sv := util.DummySubVolume(uuid.NewString())
   sv.MountedPath = sv_path
   if self.CreateDirs {
@@ -216,11 +217,15 @@ func (self *Btrfsutil) CreateSubvolume(sv_path string) error {
     }
   }
   self.Subvols = append(self.Subvols, sv)
+  if is_clone { self.Clones = append(self.Clones, sv) }
   //util.Debugf("mock.Btrfsutil.CreateSubvolume: %s", sv_path)
   return self.Err
 }
+func (self *Btrfsutil) CreateSubvolume(sv_path string) error {
+  return self.CreateSubvolumeHelper(sv_path, /*is_clone=*/false)
+}
 func (self *Btrfsutil) CreateClone(sv_path string, clone_path string) error {
-  return self.CreateSubvolume(clone_path)
+  return self.CreateSubvolumeHelper(clone_path, /*is_clone=*/true)
 }
 func (self *Btrfsutil) CreateSnapshot(subvol string, snap string) error {
   if !fpmod.IsAbs(subvol) || !fpmod.IsAbs(snap) { return fmt.Errorf("CreateSnapshot bad args") }
@@ -261,11 +266,13 @@ func (self *Btrfsutil) VolCount() int {
 
 func (self *Btrfsutil) ObjCounts() BtrfsCounts {
   return BtrfsCounts{ Subvols:len(self.Subvols),
-                      Snaps:len(self.Snaps), }
+                      Snaps:len(self.Snaps), 
+                      Clones:len(self.Clones), }
 }
-func (self BtrfsCounts) Increment(subvols int, snaps int) BtrfsCounts {
+func (self BtrfsCounts) Increment(subvols int, snaps int, clones int) BtrfsCounts {
   self.Subvols += subvols
   self.Snaps += snaps
+  self.Clones += clones
   return self
 }
 

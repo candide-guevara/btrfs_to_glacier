@@ -21,6 +21,8 @@ type RestorePair struct {
 }
 // Maps the subvolue uuid to the current snapshot sequence.
 type HeadAndSequenceMap = map[string]HeadAndSequence
+// Used internally by the BackupRestoreCanary to keep track of its state.
+type CanaryToken = interface{}
 const KCanaryDelDir = "deleted"
 const KCanaryNewDir = "new"
 const KCanaryUuidFile = "uuids"
@@ -40,20 +42,20 @@ type BackupRestoreCanary interface {
   // Creates the canary filesystem.
   // Creates dummy subvolume if there is no data in the Metadata under test.
   // Calling this method twice is a noop.
-  Setup(ctx context.Context) error
+  Setup(ctx context.Context) (CanaryToken, error)
   // Destroys the canary filesystem.
   // Calling this method twice or before `Setup()` is a noop.
   TearDown(ctx context.Context) error
   // Restores the whole snapshot sequence into the canary filesystem.
   // Validates the most recent snapshot according to its predecessors.
-  // Calling this method twice is an error since validation will not see the whole history.
+  // Calling this method multiple times without calling `AppendSnapshotToValidationChain` in between is an error.
   // Returns the restored pairs from storage that were validated.
-  RestoreChainAndValidate(ctx context.Context) ([]RestorePair, error)
+  RestoreChainAndValidate(context.Context, CanaryToken) ([]RestorePair, error)
   // Modifies the restored subvolume (by making a clone) and adds another snapshot to the sequence.
   // Backups the new snapshot into the current sequence.
-  // Must be called after the sequence has been restored. Can be called several times, adds a new snapshot each time.
+  // Calling this method multiple times without calling `RestoreChainAndValidate` in between is an error.
   // Returns the snapshot that was backed up and its corresponding entry in metadata.
-  AppendSnapshotToValidationChain(ctx context.Context) (BackupPair, error)
+  AppendSnapshotToValidationChain(context.Context, CanaryToken) (BackupPair, error)
 }
 
 // Handles volume backup from a particular source.

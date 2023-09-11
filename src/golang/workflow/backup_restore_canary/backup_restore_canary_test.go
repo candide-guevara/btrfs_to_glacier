@@ -137,6 +137,13 @@ func buildBackupRestoreCanary(hist_len int) (*BackupRestoreCanary, *Mocks) {
   return canary.(*BackupRestoreCanary), mock
 }
 
+func toCanaryToken(t *testing.T, opaque_token interface{}) *CanaryToken {
+  if opaque_token == nil { t.Fatalf("nil token") }
+  token, ok := opaque_token.(*CanaryToken) 
+  if !ok { t.Fatalf("toCanaryToken: bad type %v", opaque_token) }
+  return token
+}
+
 func TestBackupRestoreCanary_Setup_OK(t *testing.T) {
   const hist_len = 3
   ctx, cancel := context.WithTimeout(context.Background(), util.TestTimeout)
@@ -144,16 +151,18 @@ func TestBackupRestoreCanary_Setup_OK(t *testing.T) {
   canary, mock := buildBackupRestoreCanary(hist_len)
   defer mock.Lnxutil.CleanMountDirs()
   expect_linux_counts := mock.Lnxutil.ObjCounts().Increment(1,1,0,1)
-  expect_btrfs_counts := mock.Btrfs.ObjCounts().Increment(0,0)
+  btrfs_counts := mock.Btrfs.ObjCounts().Increment(
+                    /*subvols=*/0,/*snaps=*/0,/*clones=*/0)
   expect_restore_counts := mock.RestoreMgr.ObjCounts()
 
-  err := canary.Setup(ctx)
+  opaque_token, err := canary.Setup(ctx)
   if err != nil { t.Fatalf("Setup: %v", err) }
+  token := toCanaryToken(t, opaque_token)
   util.EqualsOrFailTest(t, "No subvolume should be created", mock.Btrfs.ObjCounts(),
-                                           expect_btrfs_counts)
+                                           btrfs_counts)
   util.EqualsOrFailTest(t, "Bad fs state", mock.Lnxutil.ObjCounts(),
                                            expect_linux_counts)
-  util.EqualsOrFailTest(t, "State is not new", canary.State.New, false)
+  util.EqualsOrFailTest(t, "Token is not new", token.New, false)
   util.EqualsOrFailTest(t, "BackupMgr should not be called",
                         len(mock.BackupMgr.SeqForUuid(canary.State.Uuid)), hist_len)
   util.EqualsOrFailTest(t, "RestoreMgr should not be called",
@@ -170,9 +179,9 @@ func TestBackupRestoreCanary_Setup_Noop(t *testing.T) {
   defer mock.Lnxutil.CleanMountDirs()
   expect_linux_counts := mock.Lnxutil.ObjCounts().Increment(1,1,0,1)
 
-  err := canary.Setup(ctx)
+  _, err := canary.Setup(ctx)
   if err != nil { t.Fatalf("Setup: %v", err) }
-  err = canary.Setup(ctx)
+  _, err = canary.Setup(ctx)
   if err != nil { t.Fatalf("Setup: %v", err) }
   util.EqualsOrFailTest(t, "Bad fs state", mock.Lnxutil.ObjCounts(),
                                            expect_linux_counts)
@@ -185,18 +194,20 @@ func TestBackupRestoreCanary_Setup_NewChain(t *testing.T) {
   canary, mock := buildBackupRestoreCanary(hist_len)
   defer mock.Lnxutil.CleanMountDirs()
   expect_linux_counts := mock.Lnxutil.ObjCounts().Increment(1,1,0,1)
-  expect_btrfs_counts := mock.Btrfs.ObjCounts().Increment(1,0)
+  btrfs_counts := mock.Btrfs.ObjCounts().Increment(
+                    /*subvols=*/1,/*snaps=*/0,/*clones=*/0)
   expect_restore_counts := mock.RestoreMgr.ObjCounts()
 
-  err := canary.Setup(ctx)
+  opaque_token, err := canary.Setup(ctx)
   if err != nil { t.Fatalf("Setup: %v", err) }
+  token := toCanaryToken(t, opaque_token)
   util.EqualsOrFailTest(t, "Bad fs state", mock.Lnxutil.ObjCounts(),
                                            expect_linux_counts)
   // Most of the actions are intercepted by higher level mocks except cloning
   // and the first subvolume creation for a canary chain.
   util.EqualsOrFailTest(t, "Only 1 subvolume should be created", mock.Btrfs.ObjCounts(),
-                                           expect_btrfs_counts)
-  util.EqualsOrFailTest(t, "State is not new", canary.State.New, true)
+                                           btrfs_counts)
+  util.EqualsOrFailTest(t, "State is not new", token.New, true)
   util.EqualsOrFailTest(t, "Should create a new snapshot",
                         len(mock.BackupMgr.SeqForUuid(canary.State.Uuid)), 1)
   util.EqualsOrFailTest(t, "RestoreMgr should not be called",
@@ -224,7 +235,7 @@ func TestBackupRestoreCanary_TearDown_OK(t *testing.T) {
   defer mock.Lnxutil.CleanMountDirs()
   expect_linux_counts := mock.Lnxutil.ObjCounts().Increment(1,0,1,0)
 
-  err := canary.Setup(ctx)
+  _, err := canary.Setup(ctx)
   if err != nil { t.Fatalf("Setup: %v", err) }
   err = canary.TearDown(ctx)
   if err != nil { t.Fatalf("TearDown: %v", err) }
@@ -243,7 +254,7 @@ func TestBackupRestoreCanary_TearDown_Partial(t *testing.T) {
   mock.Lnxutil.ForMethodErrMsg(mock.Lnxutil.CreateBtrfsFilesystem, "injected_err")
   expect_linux_counts := mock.Lnxutil.ObjCounts().Increment(1,0,0,1)
 
-  err := canary.Setup(ctx)
+  _, err := canary.Setup(ctx)
   if err == nil { t.Fatalf("expected error") }
   util.EqualsOrFailTest(t, "Bad fs state", mock.Lnxutil.ObjCounts(),
                                            expect_linux_counts)
@@ -262,10 +273,11 @@ func TestRestoreChainAndValidate_NewChain(t *testing.T) {
   defer cancel()
   canary, mock := buildBackupRestoreCanary(hist_len)
   defer mock.Lnxutil.CleanMountDirs()
-  if err := canary.Setup(ctx); err != nil { t.Fatalf("Setup: %v", err) }
+  opaque_token, err := canary.Setup(ctx)
+  if err != nil { t.Fatalf("Setup: %v", err) }
   expect_restore_counts := mock.RestoreMgr.ObjCounts().Increment(1,1)
 
-  pairs, err := canary.RestoreChainAndValidate(ctx)
+  pairs, err := canary.RestoreChainAndValidate(ctx, opaque_token)
   if err != nil { t.Fatalf("RestoreChainAndValidate: %v", err) }
   util.EqualsOrFailTest(t, "Bad pair len", len(pairs), 1)
   util.EqualsOrFailTest(t, "RestoreMgr should be called once",
@@ -278,10 +290,11 @@ func TestRestoreChainAndValidate_ExistingChain(t *testing.T) {
   defer cancel()
   canary, mock := buildBackupRestoreCanary(hist_len)
   defer mock.Lnxutil.CleanMountDirs()
-  if err := canary.Setup(ctx); err != nil { t.Fatalf("Setup: %v", err) }
+  opaque_token, err := canary.Setup(ctx)
+  if err != nil { t.Fatalf("Setup: %v", err) }
   expect_restore_counts := mock.RestoreMgr.ObjCounts().Increment(1,hist_len)
 
-  pairs, err := canary.RestoreChainAndValidate(ctx)
+  pairs, err := canary.RestoreChainAndValidate(ctx, opaque_token)
   if err != nil { t.Fatalf("RestoreChainAndValidate: %v", err) }
   util.EqualsOrFailTest(t, "Bad pair len", len(pairs), hist_len)
   util.EqualsOrFailTest(t, "RestoreMgr should be called once",
@@ -294,11 +307,29 @@ func TestRestoreChainAndValidate_CannotCallTwice(t *testing.T) {
   defer cancel()
   canary, mock := buildBackupRestoreCanary(hist_len)
   defer mock.Lnxutil.CleanMountDirs()
-  if err := canary.Setup(ctx); err != nil { t.Fatalf("Setup: %v", err) }
+  opaque_token, err := canary.Setup(ctx)
+  if err != nil { t.Fatalf("Setup: %v", err) }
 
-  _, err := canary.RestoreChainAndValidate(ctx)
+  _, err = canary.RestoreChainAndValidate(ctx, opaque_token)
   if err != nil { t.Fatalf("RestoreChainAndValidate: %v", err) }
-  _, err = canary.RestoreChainAndValidate(ctx)
+  _, err = canary.RestoreChainAndValidate(ctx, opaque_token)
+  if err == nil { t.Fatalf("Cannot call twice: %v", err) }
+}
+
+func TestAppendSnapshotToValidationChain_CannotCallTwice(t *testing.T) {
+  const hist_len = 0
+  ctx, cancel := context.WithTimeout(context.Background(), util.TestTimeout)
+  defer cancel()
+  canary, mock := buildBackupRestoreCanary(hist_len)
+  defer mock.Lnxutil.CleanMountDirs()
+  opaque_token, err := canary.Setup(ctx)
+  if err != nil { t.Fatalf("Setup: %v", err) }
+
+  _, err = canary.RestoreChainAndValidate(ctx, opaque_token)
+  if err != nil { t.Fatalf("RestoreChainAndValidate: %v", err) }
+  _, err = canary.AppendSnapshotToValidationChain(ctx, opaque_token)
+  if err != nil { t.Fatalf("AppendSnapshotToValidationChain: %v", err) }
+  _, err = canary.AppendSnapshotToValidationChain(ctx, opaque_token)
   if err == nil { t.Fatalf("Cannot call twice: %v", err) }
 }
 
@@ -308,10 +339,11 @@ func TestRestoreChainAndValidate_InjectRestoreErr(t *testing.T) {
   defer cancel()
   canary, mock := buildBackupRestoreCanary(hist_len)
   defer mock.Lnxutil.CleanMountDirs()
-  if err := canary.Setup(ctx); err != nil { t.Fatalf("Setup: %v", err) }
+  opaque_token, err := canary.Setup(ctx)
+  if err != nil { t.Fatalf("Setup: %v", err) }
 
   mock.RestoreMgr.ForMethodErrMsg(mock.RestoreMgr.RestoreCurrentSequence, "injected_err")
-  _, err := canary.RestoreChainAndValidate(ctx)
+  _, err = canary.RestoreChainAndValidate(ctx, opaque_token)
   if err == nil { t.Fatalf("Expected error") }
 }
 
@@ -328,9 +360,10 @@ func testRestoreFailValidation_Helper(
   }
   mock.RestoreMgr.PopulateRestore = popf_wrap
   defer mock.Lnxutil.CleanMountDirs()
-  if err := canary.Setup(ctx); err != nil { t.Fatalf("Setup: %v", err) }
+  opaque_token, err := canary.Setup(ctx)
+  if err != nil { t.Fatalf("Setup: %v", err) }
 
-  _, err := canary.RestoreChainAndValidate(ctx)
+  _, err = canary.RestoreChainAndValidate(ctx, opaque_token)
   if err == nil { t.Errorf("Expected error") }
   if errors.Is(err, ErrPopulateRestoreFail) { t.Errorf("Populate should not fail: %v", err) }
   if !errors.Is(err, expect_err) { t.Errorf("Wrong validation error: %v", err) }
@@ -435,13 +468,14 @@ func TestAppendSnapshotToValidationChain_NewChain(t *testing.T) {
   defer cancel()
   canary, mock := buildBackupRestoreCanary(hist_len)
   defer mock.Lnxutil.CleanMountDirs()
-  if err := canary.Setup(ctx); err != nil { t.Fatalf("Setup: %v", err) }
+  opaque_token, err := canary.Setup(ctx)
+  if err != nil { t.Fatalf("Setup: %v", err) }
   btrfs_counts := mock.Btrfs.ObjCounts()
 
-  _, err := canary.RestoreChainAndValidate(ctx)
+  _, err = canary.RestoreChainAndValidate(ctx, opaque_token)
   if err != nil { t.Fatalf("RestoreChainAndValidate: %v", err) }
   expect_restore_counts := mock.RestoreMgr.ObjCounts()
-  pair, err := canary.AppendSnapshotToValidationChain(ctx)
+  pair, err := canary.AppendSnapshotToValidationChain(ctx, opaque_token)
   if err != nil { t.Fatalf("AppendSnapshotToValidationChain: %v", err) }
 
   util.EqualsOrFailTest(t, "Bad uuid", pair.Sv.Uuid, pair.Snap.ParentUuid)
@@ -460,14 +494,16 @@ func TestAppendSnapshotToValidationChain_ExistingChain(t *testing.T) {
   defer cancel()
   canary, mock := buildBackupRestoreCanary(hist_len)
   defer mock.Lnxutil.CleanMountDirs()
-  if err := canary.Setup(ctx); err != nil { t.Fatalf("Setup: %v", err) }
-  btrfs_counts := mock.Btrfs.ObjCounts().Increment(1,0)
+  opaque_token, err := canary.Setup(ctx)
+  if err != nil { t.Fatalf("Setup: %v", err) }
+  btrfs_counts := mock.Btrfs.ObjCounts().Increment(
+                    /*subvols=*/1,/*snaps=*/0,/*clones=*/1)
 
-  pairs, err := canary.RestoreChainAndValidate(ctx)
+  pairs, err := canary.RestoreChainAndValidate(ctx, opaque_token)
   if err != nil { t.Fatalf("RestoreChainAndValidate: %v", err) }
   mock.SetCloneCallbackToCopyFrom(ctx, pairs[len(pairs)-1].Dst)
   expect_restore_counts := mock.RestoreMgr.ObjCounts()
-  pair, err := canary.AppendSnapshotToValidationChain(ctx)
+  pair, err := canary.AppendSnapshotToValidationChain(ctx, opaque_token)
   if err != nil { t.Fatalf("AppendSnapshotToValidationChain: %v", err) }
 
   if pair.Sv.Uuid == pair.Snap.ParentUuid {
@@ -475,7 +511,7 @@ func TestAppendSnapshotToValidationChain_ExistingChain(t *testing.T) {
              pair.Sv.Uuid, pair.Snap.ParentUuid)
   }
   util.EqualsOrFailTest(t, "Should create a new snapshot",
-                        len(mock.BackupMgr.SeqForCloneUuid(pair.Sv.Uuid)), 1)
+                        len(mock.BackupMgr.SeqForUuid(pair.Snap.ParentUuid)), hist_len+1)
   // Most of the actions are intercepted by higher level mocks except cloning
   // and the first subvolume creation for a canary chain.
   util.EqualsOrFailTest(t, "A single clone should be created", mock.Btrfs.ObjCounts(), btrfs_counts)
@@ -483,63 +519,53 @@ func TestAppendSnapshotToValidationChain_ExistingChain(t *testing.T) {
                         mock.RestoreMgr.ObjCounts(), expect_restore_counts)
 }
 
-func TestAppendSnapshotToValidationChain_NewChain_NonIdempotent(t *testing.T) {
-  const chain_len = 3
-  ctx, cancel := context.WithTimeout(context.Background(), util.TestTimeout)
-  defer cancel()
-  canary, mock := buildBackupRestoreCanary(0)
-  btrfs_counts := mock.Btrfs.ObjCounts().Increment(1,0)
-  defer mock.Lnxutil.CleanMountDirs()
-
-  if err := canary.Setup(ctx); err != nil { t.Fatalf("Setup: %v", err) }
-  _, err := canary.RestoreChainAndValidate(ctx)
-  if err != nil { t.Fatalf("RestoreChainAndValidate: %v", err) }
-
-  vol_uuids := make(map[string]bool)
-  for i:=0; i<chain_len; i+=1 {
-    pair, err := canary.AppendSnapshotToValidationChain(ctx)
-    if err != nil { t.Fatalf("AppendSnapshotToValidationChain: %v", err) }
-    vol_uuids[pair.Sv.Uuid] = true
-  }
-
-  util.EqualsOrFailTest(t, "Only 1 subvol", len(vol_uuids), 1)
-  for id,_ := range vol_uuids {
-    util.EqualsOrFailTest(t, "Bad snap seq size",
-                          len(mock.BackupMgr.SeqForUuid(id)), 1+chain_len)
-  }
-  util.EqualsOrFailTest(t, "Bad btrfs count",
-                        mock.Btrfs.ObjCounts(), btrfs_counts)
-}
-
-func TestAppendSnapshotToValidationChain_ExistingChain_NonIdempotent(t *testing.T) {
-  const hist_len = 2
-  const chain_len = 3
+func testCanary_MultiCall_Helper(
+    t *testing.T, chain_len int, hist_len int) {
   ctx, cancel := context.WithTimeout(context.Background(), util.TestTimeout)
   defer cancel()
   canary, mock := buildBackupRestoreCanary(hist_len)
-  btrfs_counts := mock.Btrfs.ObjCounts().Increment(1,0)
+  clone_cnt := 0
+  if hist_len != 0 { clone_cnt = 1 }
+  btrfs_counts := mock.Btrfs.ObjCounts().Increment(
+                    /*subvols=*/1,/*snaps=*/0,/*clones=*/clone_cnt)
   defer mock.Lnxutil.CleanMountDirs()
 
-  if err := canary.Setup(ctx); err != nil { t.Fatalf("Setup: %v", err) }
-  pairs, err := canary.RestoreChainAndValidate(ctx)
-  if err != nil { t.Fatalf("RestoreChainAndValidate: %v", err) }
-  mock.SetCloneCallbackToCopyFrom(ctx, pairs[len(pairs)-1].Dst)
+  opaque_token, err := canary.Setup(ctx)
+  if err != nil { t.Fatalf("Setup: %v", err) }
 
   vol_uuids := make(map[string]bool)
+  orig_uuid := ""
   for i:=0; i<chain_len; i+=1 {
-    pair, err := canary.AppendSnapshotToValidationChain(ctx)
-    if err != nil { t.Fatalf("AppendSnapshotToValidationChain: %v", err) }
+    pairs, err := canary.RestoreChainAndValidate(ctx, opaque_token)
+    if err != nil { t.Fatalf("%d RestoreChainAndValidate: %v", i, err) }
+    mock.SetCloneCallbackToCopyFrom(ctx, pairs[len(pairs)-1].Dst)
+
+    pair, err := canary.AppendSnapshotToValidationChain(ctx, opaque_token)
+    if err != nil { t.Fatalf("%d AppendSnapshotToValidationChain: %v", i, err) }
     vol_uuids[pair.Sv.Uuid] = true
-    mock.SetCloneCallbackToFail(t)
+    orig_uuid = pair.Snap.ParentUuid
   }
 
-  util.EqualsOrFailTest(t, "Bad clone count", len(vol_uuids), 1)
-  for id,_ := range vol_uuids {
-    util.EqualsOrFailTest(t, "Bad clone snap len",
-                          len(mock.BackupMgr.SeqForCloneUuid(id)), chain_len)
-  }
+  util.EqualsOrFailTest(t, "Only 1 subvol", len(vol_uuids), 1)
   util.EqualsOrFailTest(t, "Bad btrfs count",
                         mock.Btrfs.ObjCounts(), btrfs_counts)
+
+  expect_len := 1+chain_len
+  if hist_len != 0 { expect_len = chain_len + hist_len }
+  util.EqualsOrFailTest(t, "Bad snap seq size",
+                        len(mock.BackupMgr.SeqForUuid(orig_uuid)), expect_len)
+}
+
+func TestRestoreThenAppend_NewChain_MultiCall(t *testing.T) {
+  const chain_len = 3
+  const hist_len = 0
+  testCanary_MultiCall_Helper(t, chain_len, hist_len)
+}
+
+func TestRestoreThenAppend_ExistingChain_MultiCall(t *testing.T) {
+  const chain_len = 2
+  const hist_len = 2
+  testCanary_MultiCall_Helper(t, chain_len, hist_len)
 }
 
 func TestAppendSnapshotToValidationChain_CallBeforeRestore(t *testing.T) {
@@ -548,9 +574,10 @@ func TestAppendSnapshotToValidationChain_CallBeforeRestore(t *testing.T) {
   defer cancel()
   canary, mock := buildBackupRestoreCanary(hist_len)
   defer mock.Lnxutil.CleanMountDirs()
-  if err := canary.Setup(ctx); err != nil { t.Fatalf("Setup: %v", err) }
+  opaque_token, err := canary.Setup(ctx)
+  if err != nil { t.Fatalf("Setup: %v", err) }
 
-  _, err := canary.AppendSnapshotToValidationChain(ctx)
+  _, err = canary.AppendSnapshotToValidationChain(ctx, opaque_token)
   util.EqualsOrFailTest(t, "Bad error", err, ErrMustRestoreBefore)
 }
 
@@ -562,13 +589,14 @@ func TestAppendSnapshotToValidationChain_InjectBackupErr(t *testing.T) {
   canary, mock := buildBackupRestoreCanary(hist_len)
   defer mock.Lnxutil.CleanMountDirs()
 
-  if err := canary.Setup(ctx); err != nil { t.Fatalf("Setup: %v", err) }
-  pairs, err := canary.RestoreChainAndValidate(ctx)
+  opaque_token, err := canary.Setup(ctx)
+  if err != nil { t.Fatalf("Setup: %v", err) }
+  pairs, err := canary.RestoreChainAndValidate(ctx, opaque_token)
   if err != nil { t.Fatalf("RestoreChainAndValidate: %v", err) }
   mock.SetCloneCallbackToCopyFrom(ctx, pairs[len(pairs)-1].Dst)
 
   mock.BackupMgr.ForMethodErr(mock.BackupMgr.BackupToCurrentSequenceUnrelatedVol, expect_err)
-  _, err = canary.AppendSnapshotToValidationChain(ctx)
+  _, err = canary.AppendSnapshotToValidationChain(ctx, opaque_token)
   util.EqualsOrFailTest(t, "Bad error", err, expect_err)
 }
 
