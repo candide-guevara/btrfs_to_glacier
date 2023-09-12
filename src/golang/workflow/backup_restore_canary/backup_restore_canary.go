@@ -92,6 +92,13 @@ func CreateOrFailIfExists(path string) (*os.File, error) {
   return os.OpenFile(path, os.O_EXCL|os.O_CREATE|os.O_WRONLY, 0644)
 }
 
+// Need this wrapper to read all metadata from the subvolume (in particualr tree_path).
+func (self *BackupRestoreCanary) ReadRootSubvol() (*pb.SubVolume, error) {
+  drop_f := self.Lnxutil.GetRootOrDie()
+  defer drop_f()
+  return self.Btrfs.SubVolumeInfo(self.VolRoot())
+}
+
 // Creates empty btrfs filesystem on loop device.
 // Prepares State to point to the newly created filesystem.
 // Creates a new volume if this is the first time the canary is run.
@@ -137,7 +144,7 @@ func (self *BackupRestoreCanary) Setup(ctx context.Context) (types.CanaryToken, 
     token.New = true
     err = self.Btrfs.CreateSubvolume(self.VolRoot())
     if err != nil { return nil, err }
-    sv, err := self.Btrfs.SubVolumeInfo(self.VolRoot())
+    sv, err := self.ReadRootSubvol()
     if err != nil { return nil, err }
     err = self.CreateFirstValidationChainItem()
     if err != nil { return nil, err }
@@ -261,11 +268,11 @@ func (self *BackupRestoreCanary) AppendSnapshotToValidationChain(
   if token.TopSrcRestoredSnap == nil { return result, ErrMustRestoreBefore }
 
   // Create the clone only if needed, if the original subvol is still present, use it instead.
-  result.Sv, err = self.Btrfs.SubVolumeInfo(self.VolRoot())
+  result.Sv, err = self.ReadRootSubvol()
   if err != nil {
     err := self.Btrfs.CreateClone(token.TopDstRestoredPath, self.VolRoot())
     if err != nil { return result, err }
-    result.Sv, err = self.Btrfs.SubVolumeInfo(self.VolRoot())
+    result.Sv, err = self.ReadRootSubvol()
     if err != nil { return result, err }
   }
 
@@ -273,7 +280,7 @@ func (self *BackupRestoreCanary) AppendSnapshotToValidationChain(
   if err != nil { return result, err }
 
   if result.Sv.Uuid == self.State.Uuid {
-    bkp_pair, err := self.State.BackupMgr.BackupAllToCurrentSequences(
+    bkp_pair, err := self.State.BackupMgr.BackupAllToCurrentSequences_NoReUse(
                        ctx, []*pb.SubVolume{result.Sv,})
     if err != nil { return result, err }
     if len(bkp_pair) != 1 {
