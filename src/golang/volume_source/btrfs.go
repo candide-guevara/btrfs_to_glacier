@@ -248,7 +248,7 @@ func (self *btrfsVolumeManager) GetSnapshotStream(
 func (self *btrfsVolumeManager) CreateSnapshot(subvol *pb.SubVolume) (*pb.SubVolume, error) {
   // If tree path == "" then it is not known or this is the root subvol
   if len(subvol.MountedPath) < 1 || len(subvol.TreePath) < 1 {
-    return nil, fmt.Errorf("CreateSnapshot subvol needs MountedPath and TreePath")
+    return nil, fmt.Errorf("CreateSnapshot subvol needs MountedPath and TreePath: %v", subvol)
   }
   if len(subvol.ParentUuid) > 0 { return nil, fmt.Errorf("CreateSnapshot from a snapshot") }
 

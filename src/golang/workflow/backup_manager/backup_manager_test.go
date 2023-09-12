@@ -404,6 +404,28 @@ func TestBackupAllToCurrentSequences_ReuseRecentSnap(t *testing.T) {
   ValidateObjectCounts(t, mocks, new_state)
 }
 
+func TestBackupAllToCurrentSequences_NoReuseRecentSnap(t *testing.T) {
+  const vol_count = 3
+  ctx, cancel := context.WithTimeout(context.Background(), util.TestTimeout)
+  defer cancel()
+
+  meta, store := mocks.DummyMetaAndStorage(vol_count,1,1,1)
+  mgr, mocks := buildBackupManager(meta, store, mocks.NewVolumeManager())
+  expect_svs := mocks.Source.AllVols()
+  for _,sv := range expect_svs {
+    mocks.AddSnapshotInSrc(sv, uuid.NewString(), /*recent=*/true)
+  }
+  new_state := mocks.CountState().IncMeta(0, 0, vol_count, vol_count).
+                                  IncSource(0, 0, vol_count, 0).
+                                  IncStore(vol_count, 0)
+  pairs, err := mgr.BackupAllToCurrentSequences_NoReUse(
+                  ctx, mocks.Source.AllVols())
+  if err != nil { util.Fatalf("BackupAllToCurrentSequences: %v", err) }
+
+  ValidateBackupPairs(t, mocks, expect_svs, pairs)
+  ValidateObjectCounts(t, mocks, new_state)
+}
+
 func TestBackupAllToNewSequences_NoMetaNoSource(t *testing.T) {
   const vol_count = 3
   HelperBackupAllToCurrentSequences_NoMetaNoSource(t, vol_count, /*new_seq=*/true)

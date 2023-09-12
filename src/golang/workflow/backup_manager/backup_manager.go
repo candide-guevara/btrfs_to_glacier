@@ -82,6 +82,7 @@ func (self *BackupManager) CreateNewSnapshotOrUseRecent(
     if age <= self.MinInterval { return src_snap_seq, nil }
   }
   snap, err := self.Source.CreateSnapshot(sv)
+  if err != nil { return nil, err }
   src_snap_seq = append(src_snap_seq, snap)
   util.Debugf("Backup snap %s for subvolume %s", snap.Uuid, sv.Uuid)
   return src_snap_seq, err
@@ -125,8 +126,8 @@ func (self *BackupManager) DetermineParentForIncremental(
 }
 
 func (self *BackupManager) BackupSingleSvToSequence(
-    ctx context.Context, sv *pb.SubVolume, seq *pb.SnapshotSequence) (*pb.SubVolume, error) {
-  src_snap_seq, err := self.CreateNewSnapshotOrUseRecent(sv, /*use_recent=*/true)
+    ctx context.Context, sv *pb.SubVolume, seq *pb.SnapshotSequence, reuse bool) (*pb.SubVolume, error) {
+  src_snap_seq, err := self.CreateNewSnapshotOrUseRecent(sv, /*use_recent=*/reuse)
   if err != nil { return nil, err }
   snap := src_snap_seq[len(src_snap_seq)-1]
   full_snap, err := self.IsBackupAlreadyInStorage(ctx, snap)
@@ -155,14 +156,14 @@ func (self *BackupManager) PersistSequence(
 }
 
 func (self *BackupManager) BackupAllHelper(
-    ctx context.Context, subvols []*pb.SubVolume, new_seq bool) ([]types.BackupPair, error) {
+    ctx context.Context, subvols []*pb.SubVolume, new_seq bool, reuse bool) ([]types.BackupPair, error) {
   if len(subvols) == 0 { return nil, fmt.Errorf("BackupAllHelper subvols empty") }
   backups := make([]types.BackupPair, 0, 10)
 
   for _,sv := range subvols {
     seq, err := self.GetSequenceFor(ctx, sv, new_seq)
     if err != nil { return backups, err }
-    snap, err := self.BackupSingleSvToSequence(ctx, sv, seq)
+    snap, err := self.BackupSingleSvToSequence(ctx, sv, seq, reuse)
     if err != nil { return backups, err }
     _, err = self.PersistSequence(ctx, snap, seq)
     if err != nil { return backups, err }
@@ -173,12 +174,17 @@ func (self *BackupManager) BackupAllHelper(
 
 func (self *BackupManager) BackupAllToCurrentSequences(
     ctx context.Context, subvols []*pb.SubVolume) ([]types.BackupPair, error) {
-  return self.BackupAllHelper(ctx, subvols, /*new_seq=*/false)
+  return self.BackupAllHelper(ctx, subvols, /*new_seq=*/false, /*reuse=*/true)
+}
+
+func (self *BackupManager) BackupAllToCurrentSequences_NoReUse(
+    ctx context.Context, subvols []*pb.SubVolume) ([]types.BackupPair, error) {
+  return self.BackupAllHelper(ctx, subvols, /*new_seq=*/false, /*reuse=*/false)
 }
 
 func (self *BackupManager) BackupAllToNewSequences(
     ctx context.Context, subvols []*pb.SubVolume) ([]types.BackupPair, error) {
-  return self.BackupAllHelper(ctx, subvols, /*new_seq=*/true)
+  return self.BackupAllHelper(ctx, subvols, /*new_seq=*/true, /*reuse=*/true)
 }
 
 // dd if=/dev/zero of=/tmp/loop.file bs=1M count=64

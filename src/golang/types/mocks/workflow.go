@@ -112,6 +112,11 @@ func (self *BackupManager) BackupAllToCurrentSequences(
   return res, self.ErrInject(self.BackupAllToCurrentSequences)
 }
 
+func (self *BackupManager) BackupAllToCurrentSequences_NoReUse(
+    ctx context.Context, subvols []*pb.SubVolume) ([]types.BackupPair, error) {
+  return self.BackupAllToCurrentSequences(ctx, subvols)
+}
+
 func (self *BackupManager) BackupAllToNewSequences(
     ctx context.Context, subvols []*pb.SubVolume) ([]types.BackupPair, error) {
   util.Fatalf("This mock is too simple?")

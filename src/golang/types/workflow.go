@@ -69,13 +69,16 @@ type BackupManager interface {
   // Returns the pairs of (subvolume, incremental snapshot) in unspecified order.
   // An error indicates at least 1 subvolume could not be backep-up but other may have been.
   // (Given the idempotency of this operation, you can simply try again)
-  BackupAllToCurrentSequences(ctx context.Context, subvols []*pb.SubVolume) ([]BackupPair, error)
+  BackupAllToCurrentSequences(context.Context, []*pb.SubVolume) ([]BackupPair, error)
+  // Like `BackupToCurrentSequence` except that recent snapshots will not be re-used.
+  // This is an advanced operation, behviour is undefined if no data has changed in the subvolumes.
+  BackupAllToCurrentSequences_NoReUse(context.Context, []*pb.SubVolume) ([]BackupPair, error)
   // Like `BackupToCurrentSequence` except that:
   // * A **full** backup of the source subvolumes will be stored.
   // * Every call will always create a new `SnapshotSequence`.
   // Note that several calls to this method may NOT create each a snapshot in metadata or storage.
   // Rather the created sequences may point to an already stored recent snapshot.
-  BackupAllToNewSequences(ctx context.Context, subvols []*pb.SubVolume) ([]BackupPair, error)
+  BackupAllToNewSequences(context.Context, []*pb.SubVolume) ([]BackupPair, error)
 }
 
 // TODO Who is responsible for this ?
