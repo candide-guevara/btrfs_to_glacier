@@ -271,6 +271,41 @@ func TestCreateSnapshot(t *testing.T) {
   t.Errorf("Snapshot was not created")
 }
 
+func TestCreateSnapshotLongName(t *testing.T) {
+  volmgr, btrfsutil, _ := buildTestManager()
+  expect_cnt := btrfsutil.ObjCounts().Increment(/*subvols=*/0, /*snaps=*/3, /*clones=*/0)
+  sv := CloneSubvol(btrfsutil.Subvols[0])
+  snap_uuids := make(map[string]bool)
+
+  snapshot, err := volmgr.CreateSnapshotLongName(sv)
+  if err != nil { t.Fatalf("1 %s", err) }
+  if len(snapshot.MountedPath) < 1 { t.Errorf("created snapshot should return mounted path.") }
+  snap_uuids[snapshot.Uuid] = true
+  snapshot, err = volmgr.CreateSnapshot(sv)
+  if err != nil { t.Fatalf("1 %s", err) }
+  snap_uuids[snapshot.Uuid] = true
+  snapshot, err = volmgr.CreateSnapshotLongName(sv)
+  if err != nil { t.Fatalf("1 %s", err) }
+  snap_uuids[snapshot.Uuid] = true
+  util.EqualsOrFailTest(t, "CreateSnapshot not called", btrfsutil.ObjCounts(), expect_cnt)
+
+  found_cnt := 0
+  for _,snap := range btrfsutil.Snaps {
+    if snap_uuids[snap.Uuid] { found_cnt += 1 }
+  }
+  util.EqualsOrFailTest(t, "Bad snapshot count", found_cnt, 3)
+}
+
+func TestCreateSnapshotTwiceFails(t *testing.T) {
+  volmgr, btrfsutil, _ := buildTestManager()
+  sv := CloneSubvol(btrfsutil.Subvols[0])
+
+  snapshot, err := volmgr.CreateSnapshot(sv)
+  if err != nil { t.Fatalf("%s", err) }
+  _, err = volmgr.CreateSnapshot(sv)
+  if err == nil { t.Fatalf("Should not snapshot twice %v, (first snap %v)", sv, snapshot) }
+}
+
 func TestDeleteSnapshot(t *testing.T) {
   volmgr, btrfsutil, _ := buildTestManager()
   err := volmgr.DeleteSnapshot(btrfsutil.Subvols[0])

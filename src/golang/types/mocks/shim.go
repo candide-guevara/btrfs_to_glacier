@@ -229,6 +229,10 @@ func (self *Btrfsutil) CreateClone(sv_path string, clone_path string) error {
 }
 func (self *Btrfsutil) CreateSnapshot(subvol string, snap string) error {
   if !fpmod.IsAbs(subvol) || !fpmod.IsAbs(snap) { return fmt.Errorf("CreateSnapshot bad args") }
+  for _,sv := range self.Snaps {
+    if sv.MountedPath == snap { return fmt.Errorf("duplicate path: %s", snap) }
+  }
+
   sv := util.DummySnapshot(uuid.NewString(), subvol)
   sv.MountedPath = snap
   if self.CreateDirs {

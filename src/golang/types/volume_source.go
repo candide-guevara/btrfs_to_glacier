@@ -55,6 +55,9 @@ type VolumeSource interface {
   // Creates a read-only snapshot of `subvol`.
   // The path for the new snapshot will be determined by configuration.
   CreateSnapshot(subvol *pb.SubVolume) (*pb.SubVolume, error)
+  // Same as `CreateSnapshot` but tries harder to avoid naming conflicts.
+  // Advanced operation prefer `CreateSnapshot`.
+  CreateSnapshotLongName(subvol *pb.SubVolume) (*pb.SubVolume, error)
   // Create a pipe with the data from the delta between `from` and `to` snapshots.
   // `from` can be nil to get the full snapshot content.
   GetSnapshotStream(ctx context.Context, from *pb.SubVolume, to *pb.SubVolume) (ReadEndIf, error)

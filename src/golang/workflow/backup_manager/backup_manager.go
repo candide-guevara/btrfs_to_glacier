@@ -81,7 +81,9 @@ func (self *BackupManager) CreateNewSnapshotOrUseRecent(
     age := time.Now().Sub(time.Unix(int64(top_snap.CreatedTs), 0))
     if age <= self.MinInterval { return src_snap_seq, nil }
   }
-  snap, err := self.Source.CreateSnapshot(sv)
+  create_f := self.Source.CreateSnapshot
+  if !use_recent { create_f = self.Source.CreateSnapshotLongName }
+  snap, err := create_f(sv)
   if err != nil { return nil, err }
   src_snap_seq = append(src_snap_seq, snap)
   util.Debugf("Backup snap %s for subvolume %s", snap.Uuid, sv.Uuid)

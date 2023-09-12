@@ -245,7 +245,8 @@ func (self *btrfsVolumeManager) GetSnapshotStream(
   return read_end, err
 }
 
-func (self *btrfsVolumeManager) CreateSnapshot(subvol *pb.SubVolume) (*pb.SubVolume, error) {
+func (self *btrfsVolumeManager) CreateSnapshot_Helper(
+    subvol *pb.SubVolume, longname bool) (*pb.SubVolume, error) {
   // If tree path == "" then it is not known or this is the root subvol
   if len(subvol.MountedPath) < 1 || len(subvol.TreePath) < 1 {
     return nil, fmt.Errorf("CreateSnapshot subvol needs MountedPath and TreePath: %v", subvol)
@@ -255,19 +256,33 @@ func (self *btrfsVolumeManager) CreateSnapshot(subvol *pb.SubVolume) (*pb.SubVol
   snap_root, err := self.FindSnapPathForSubVolume(subvol)
   if err != nil { return nil, err }
 
-  ts_str    := time.Now().Format("20060201")
+  now := time.Now()
+  ts_str := now.Format("20060201")
+  suffix := now.Unix()
+  if longname { suffix = now.UnixMicro() }
   snap_name := fmt.Sprintf("%s.%s.%d",
-                           fpmod.Base(subvol.TreePath), ts_str, time.Now().Unix())
+                           fpmod.Base(subvol.TreePath), ts_str, suffix)
   snap_path := fpmod.Join(snap_root, snap_name)
 
   drop_f := self.linuxutil.GetRootOrDie()
   defer drop_f()
   err = self.btrfsutil.CreateSnapshot(subvol.MountedPath, snap_path)
-  if err != nil { return nil, err }
+  if err != nil {
+    if util.Exists(snap_path) { return nil, fmt.Errorf("cannot create snap: %s exists", snap_path) }
+    return nil, err
+  }
   snap, err := self.GetVolume(snap_path)
   if err != nil { return nil, err }
   snap.MountedPath = snap_path
   return snap, nil
+}
+
+func (self *btrfsVolumeManager) CreateSnapshot(subvol *pb.SubVolume) (*pb.SubVolume, error) {
+  return self.CreateSnapshot_Helper(subvol, /*longname=*/false)
+}
+
+func (self *btrfsVolumeManager) CreateSnapshotLongName(subvol *pb.SubVolume) (*pb.SubVolume, error) {
+  return self.CreateSnapshot_Helper(subvol, /*longname=*/true)
 }
 
 func IsReadOnlySnap(subvol *pb.SubVolume) bool {

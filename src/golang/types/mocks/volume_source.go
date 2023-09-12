@@ -213,6 +213,9 @@ func (self *VolumeManager) CreateSnapshot(subvol *pb.SubVolume) (*pb.SubVolume, 
   clone := proto.Clone(snap).(*pb.SubVolume)
   return clone, self.Err
 }
+func (self *VolumeManager) CreateSnapshotLongName(subvol *pb.SubVolume) (*pb.SubVolume, error) {
+  return self.CreateSnapshot(subvol)
+}
 func (self *VolumeManager) GetSnapshotStream(
     ctx context.Context, from *pb.SubVolume, to *pb.SubVolume) (types.ReadEndIf, error) {
   found_to, err := self.FindVolume("", types.ByUuid(to.Uuid))
