@@ -44,6 +44,10 @@ clean:
 	fi
 	rm -rf bin/*
 
+canary_integ: all
+	pushd "$(MYGOSRC)"
+	GOENV="$(GOENV)" go run ./workflow/backup_restore_canary/canary_integration
+
 cloud_integ: all
 	pushd "$(MYGOSRC)"
 	GOENV="$(GOENV)" go run ./volume_store/cloud_integration
@@ -61,7 +65,7 @@ shim_integ: all | $(SUBVOL_PATH)
 linters:
 	bash etc/check_on_test_code_in_prod.sh "$(MYGOSRC)"
 
-test: go_unittest cloud_integ shim_integ linters
+test: go_unittest canary_integ cloud_integ shim_integ linters
 
 $(SUBVOL_PATH):
 	echo "$(SUBVOL_PATH)"
@@ -98,7 +102,7 @@ go_debug: go_code
 	pushd "$(MYGOSRC)"
 	echo '
 	#break btrfs_to_glacier/encryption.(*aesGzipCodec).EncryptStream
-	break $(DEBUG_PKG)/factory_test.go:11
+	break $(DEBUG_PKG)/backup_restore_canary.go:258
 	continue
 	' > "$(MYDLVINIT)"
 	# https://github.com/go-delve/delve/blob/master/Documentation/usage/dlv_debug.md
