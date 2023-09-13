@@ -382,14 +382,14 @@ func (self *BackupRestoreCanary) ValidateDelDir(token *CanaryToken) error {
   entries, err := os.ReadDir(RestoredDelDir(token))
   if err != nil { return err }
   if len(entries) != 1 {
-    return fmt.Errorf("%w: should contain only 1 file, got: %d",
-                      ErrValidateDelDir, len(entries))
+    return fmt.Errorf("%w: should contain only 1 file, got: %d in %s",
+                      ErrValidateDelDir, len(entries), RestoredDelDir(token))
   }
 
-  expect_delname := token.TopSrcRestoredSnap.Uuid
+  expect_delname := token.RestoredSrcSnaps[len(token.RestoredSrcSnaps)-1].Uuid
   if expect_delname != entries[0].Name() {
-    return fmt.Errorf("%w: should contain a file named after State.RestoredSrcSnaps[-1]: '%s'",
-                      ErrValidateDelDir, entries[0].Name())
+    return fmt.Errorf("%w: should contain a file named RestoredSrcSnaps[-1]: '%s' in %s",
+                      ErrValidateDelDir, entries[0].Name(), RestoredDelDir(token))
   }
 
   got_hash, err := ReadFileIntoString(RestoredDelDir(token), entries[0].Name())
@@ -401,7 +401,8 @@ func (self *BackupRestoreCanary) ValidateDelDir(token *CanaryToken) error {
     prev_hash = expect_hash
   }
   if strings.Compare(got_hash, expect_hash) != 0 {
-    return fmt.Errorf("%w: file, bad content: %x != %x", ErrValidateDelDir, got_hash, expect_hash)
+    return fmt.Errorf("%w: file, bad content: %x != %x in %s",
+                      ErrValidateDelDir, got_hash, expect_hash, RestoredDelDir(token))
   }
   return nil
 }

@@ -197,7 +197,7 @@ func PopulateRestoreCorrect(orig *pb.SubVolume, pairs []types.RestorePair) error
     prev_hash = del_hash
     del_hash = util.HashFromSv(pairs[i].Src, prev_hash)
   }
-  del_file := fpmod.Join(DelDir(dst), pairs[len(pairs) - 1].Src.Uuid)
+  del_file := fpmod.Join(DelDir(dst), pairs[len(pairs) - 2].Src.Uuid)
   err = os.WriteFile(del_file, []byte(del_hash), 0666)
   return err
 }
