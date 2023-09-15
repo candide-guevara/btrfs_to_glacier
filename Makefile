@@ -1,6 +1,6 @@
 .ONESHELL:
 .SECONDARY:
-.PHONY: all clean fs_init c_code go_code go_debug go_unittest go_deflake test
+.PHONY: all clean fs_init fuzzer c_code go_code go_debug go_unittest go_deflake test
 
 PROJ_ROOT     := $(realpath $(dir $(lastword $(MAKEFILE_LIST))))
 include etc/Makefile.include
@@ -62,10 +62,14 @@ shim_integ: all | $(SUBVOL_PATH)
 		--destvol="$(MOUNT_TESTVOL_DST)" \
 		--snap1="$(SNAP1_PATH)" --snap2="$(SNAP2_PATH)"
 
+fuzzer: all
+	pushd "$(MYGOSRC)"
+	GOENV="$(GOENV)" go run ./encryption/fuzz_correctness
+
 linters:
 	bash etc/check_on_test_code_in_prod.sh "$(MYGOSRC)"
 
-test: go_unittest canary_integ cloud_integ shim_integ linters
+test: go_unittest fuzzer canary_integ cloud_integ shim_integ linters
 
 $(SUBVOL_PATH):
 	echo "$(SUBVOL_PATH)"
@@ -84,7 +88,7 @@ go_unittest: go_code
 	# add --test.v to get verbose tests
 	# add --test.count=1 to not cache results
 	# add --test.run=filter_rx to choose tests to run
-	pkg_to_test=( `GOENV="$(GOENV)" go list btrfs_to_glacier/... | grep -vE "_integration$$|/types"` )
+	pkg_to_test=( `GOENV="$(GOENV)" go list btrfs_to_glacier/... | grep -vE "_integration$$|/types|/fuzz"` )
 	GOENV="$(GOENV)" go test $(GO_TEST_FLAGS) "$${pkg_to_test[@]}"
 
 go_deflake: go_code

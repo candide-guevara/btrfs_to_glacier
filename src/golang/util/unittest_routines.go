@@ -81,6 +81,15 @@ func GenerateRandomTextData(size int) []byte {
   return buffer_txt[:size]
 }
 
+func GenerateRandomTextDataFrom(gen *rand.Rand, size int) []byte {
+  buffer := make([]byte, size)
+  buffer_txt := make([]byte, base64.StdEncoding.EncodedLen(size))
+  _, err := gen.Read(buffer)
+  if err != nil { Fatalf("rand failed: %v", err) }
+  base64.StdEncoding.Encode(buffer_txt, buffer)
+  return buffer_txt[:size]
+}
+
 func ProduceRandomTextIntoPipe(ctx context.Context, chunk int, iterations int) types.ReadEndIf {
   pipe := NewInMemPipe(ctx)
 
