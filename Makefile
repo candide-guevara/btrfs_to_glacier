@@ -95,9 +95,12 @@ go_deflake: go_code
 	# example call:
 	# make go_deflake DEFLAKE_TEST=TestBucketCreation_Immediate DEFLAKE_PKG=volume_store/aws_s3_common
 	pushd "$(MYGOSRC)"
+	echo
+	echo "### Deflaking the following tests:"
+	GOENV="$(GOENV)" go test "btrfs_to_glacier/$(DEFLAKE_PKG)" --test.list="$(DEFLAKE_TEST)"
 	while true; do
-	  GOENV="$(GOENV)" go test $(GO_TEST_FLAGS) --test.count=1 \
-		  --run "btrfs_to_glacier/$(DEFLAKE_TEST)" "$(DEFLAKE_PKG)" || break
+	  GOENV="$(GOENV)" go test "btrfs_to_glacier/$(DEFLAKE_PKG)" --test.count=1 \
+		  --test.run="$(DEFLAKE_TEST)" --test.failfast || break
 	done
 
 go_debug: go_code
@@ -106,7 +109,8 @@ go_debug: go_code
 	pushd "$(MYGOSRC)"
 	echo '
 	#break btrfs_to_glacier/encryption.(*aesGzipCodec).EncryptStream
-	break $(DEBUG_PKG)/backup_restore_canary.go:258
+	break $(DEBUG_PKG)/compressed_io_test.go:27
+	break $(DEBUG_PKG)/compressed_io.go:45
 	continue
 	' > "$(MYDLVINIT)"
 	# https://github.com/go-delve/delve/blob/master/Documentation/usage/dlv_debug.md
