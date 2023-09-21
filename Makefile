@@ -108,9 +108,7 @@ go_debug: go_code
 	# make go_debug DEBUG_TEST=TestBucketCreation_Immediate DEBUG_PKG=volume_store/aws_s3_common
 	pushd "$(MYGOSRC)"
 	echo '
-	#break btrfs_to_glacier/encryption.(*aesGzipCodec).EncryptStream
-	break $(DEBUG_PKG)/compressed_io_test.go:27
-	break $(DEBUG_PKG)/compressed_io.go:45
+	break btrfs_to_glacier/$(DEBUG_PKG).$(DEBUG_TEST)
 	continue
 	' > "$(MYDLVINIT)"
 	# https://github.com/go-delve/delve/blob/master/Documentation/usage/dlv_debug.md
