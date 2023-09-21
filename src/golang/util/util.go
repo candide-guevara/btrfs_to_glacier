@@ -156,7 +156,7 @@ func NewInMemPipe(ctx context.Context) *PipeImpl {
   go func() {
     select {
       case <-ctx.Done():
-        //Infof("NewInMemPipe ctx closing")
+        //Warnf("NewInMemPipe ctx closing")
         read_end.Close()
         write_end.Close()
     }

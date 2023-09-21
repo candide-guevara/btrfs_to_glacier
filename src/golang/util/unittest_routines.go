@@ -108,7 +108,7 @@ func WaitDurationForNoError(t *testing.T, duration time.Duration, done <-chan er
   if done == nil { t.Error("channel is nil"); return }
   select {
     case err,ok := <-done:
-      if !ok { Infof("channel closed") }
+      if !ok { Infof("WaitDurationForNoError: channel closed") }
       if err != nil { t.Errorf("Error in channel: %v", err) }
     case <-time.After(duration):
       t.Errorf("WaitForNoError timeout."); return
@@ -120,7 +120,7 @@ func WaitForClosure(t *testing.T, ctx context.Context, done <-chan error) error 
   if ctx.Err() != nil { t.Errorf("context expired before select"); return nil }
   for { select {
     case err,ok := <-done:
-      if !ok { Infof("channel closed") }
+      if !ok { Infof("WaitForClosure: channel closed") }
       return err
     case <-ctx.Done(): t.Errorf("WaitForClosure timeout."); return nil
   }}
@@ -132,7 +132,7 @@ func WaitForClosureOrDie(ctx context.Context, done <-chan error) error {
   if ctx.Err() != nil { Fatalf("context expired before select") }
   for { select {
     case err,ok := <-done:
-      if !ok { Infof("channel closed") }
+      if !ok { Infof("WaitForClosureOrDie: channel closed") }
       return err
     case <-ctx.Done(): Fatalf("WaitForClosure timeout.")
   }}
@@ -143,7 +143,7 @@ func WaitDurationForClosure(t *testing.T, duration time.Duration, done <-chan er
   if done == nil { t.Error("channel is nil"); return nil }
   for { select {
     case err,ok := <-done:
-      if !ok { Infof("channel closed") }
+      if !ok { Infof("WaitDurationForClosure: channel closed") }
       return err
     case <-time.After(duration):
       t.Errorf("WaitForClosure timeout."); return nil
