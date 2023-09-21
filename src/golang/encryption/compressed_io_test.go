@@ -8,13 +8,16 @@ import (
 
   "btrfs_to_glacier/types/mocks"
   "btrfs_to_glacier/util"
+  "btrfs_to_glacier/types"
 )
 
 func TestGzipSink_BadData(t *testing.T) {
+  ctx,cancel := context.WithTimeout(context.Background(), util.TestTimeout)
+  defer cancel()
   buf := new(bytes.Buffer)
   expect_msg := []byte("this is some plain text data")
 
-  gzip_w := NewDecompressingSink_Gzip(buf)
+  gzip_w := NewDecompressingSink_Gzip(ctx, buf)
   // The first write races with the initialization of the gzip reader,
   // so the errors has not time to propagate.
   gzip_w.Write(expect_msg)
@@ -26,12 +29,14 @@ func TestGzipSink_BadData(t *testing.T) {
 }
 
 func TestGzipSmallMsg(t *testing.T) {
+  ctx,cancel := context.WithTimeout(context.Background(), util.TestTimeout)
+  defer cancel()
   buf := new(bytes.Buffer)
   expect_msg := []byte("this is some plain text data")
   read_pipe := mocks.NewPreloadedPipe(expect_msg).ReadEnd()
 
   gzip_r := NewCompressingSource_Gzip(read_pipe)
-  gzip_w := NewDecompressingSink_Gzip(buf)
+  gzip_w := NewDecompressingSink_Gzip(ctx, buf)
   count, err := io.Copy(gzip_w, gzip_r)
   if err != nil { t.Errorf("io.Copy: count=%d, %v", count, err) }
   err = gzip_w.Close()
@@ -62,7 +67,7 @@ func TestGzipSmallMsg_ManyWrites(t *testing.T) {
   }()
 
   gzip_r := NewCompressingSource_Gzip(reader)
-  gzip_w := NewDecompressingSink_Gzip(buf)
+  gzip_w := NewDecompressingSink_Gzip(ctx, buf)
   count, err := io.Copy(gzip_w, gzip_r)
   if err != nil { t.Errorf("io.Copy: count=%d, %v", count, err) }
   err = gzip_w.Close()
@@ -83,7 +88,7 @@ func TestGzipLargeMsg(t *testing.T) {
   read_pipe := mocks.NewBigPreloadedPipe(ctx, expect_msg).ReadEnd()
 
   gzip_r := NewCompressingSource_Gzip(read_pipe)
-  gzip_w := NewDecompressingSink_Gzip(buf)
+  gzip_w := NewDecompressingSink_Gzip(ctx, buf)
   count, err := io.Copy(gzip_w, gzip_r)
   if err != nil { t.Errorf("io.Copy: count=%d, %v", count, err) }
   err = gzip_w.Close()
@@ -94,18 +99,15 @@ func TestGzipLargeMsg(t *testing.T) {
   }
 }
 
-func TestGzipLargeMsg_ViaPipe(t *testing.T) {
-  ctx,cancel := context.WithTimeout(context.Background(), util.TestTimeout)
-  defer cancel()
-
-  pipe_r, pipe_w := io.Pipe()
+func testGzipLargeMsg_ViaPipe_Helper(
+    ctx context.Context, t *testing.T, pipe_r io.ReadCloser, pipe_w io.WriteCloser) {
   buf := new(bytes.Buffer)
   alphabet := []byte("repeat this short message forever and ever.")
   expect_msg := bytes.Repeat(alphabet, 4096)
   read_pipe := mocks.NewBigPreloadedPipe(ctx, expect_msg).ReadEnd()
 
   gzip_r := NewCompressingSource_Gzip(read_pipe)
-  gzip_w := NewDecompressingSink_Gzip(buf)
+  gzip_w := NewDecompressingSink_Gzip(ctx, buf)
   done_r := make(chan error)
   done_w := make(chan error)
 
@@ -127,5 +129,59 @@ func TestGzipLargeMsg_ViaPipe(t *testing.T) {
   util.WaitForClosure(t, ctx, done_r)
   util.WaitForClosure(t, ctx, done_w)
   util.EqualsOrFailTest(t, "Bad length", buf.Len(), len(expect_msg))
+}
+
+func TestGzipLargeMsg_ViaPipe(t *testing.T) {
+  ctx,cancel := context.WithTimeout(context.Background(), util.TestTimeout)
+  defer cancel()
+
+  pipes := []types.Pipe{
+    util.NewFileBasedPipe(ctx),
+    util.NewInMemPipe(ctx),
+  }
+  for _,pipe := range pipes {
+    testGzipLargeMsg_ViaPipe_Helper(ctx, t, pipe.ReadEnd(), pipe.WriteEnd())
+  }
+}
+
+func testGzipSinkCloseRace_Helper(
+    ctx context.Context, t *testing.T, pipe_r io.ReadCloser, pipe_w io.WriteCloser) {
+  buf := new(bytes.Buffer)
+  expect_msg := []byte("this is some plain text data")
+  read_pipe := mocks.NewPreloadedPipe(expect_msg).ReadEnd()
+
+  done := make(chan error)
+  go func() {
+    count, err := io.Copy(buf, pipe_r)
+    if err != nil { t.Errorf("io.Copy: count=%d, %v", count, err) }
+    close(done)
+  }()
+
+  gzip_r := NewCompressingSource_Gzip(read_pipe)
+  gzip_w := NewDecompressingSink_Gzip(ctx, pipe_w)
+  count, err := io.Copy(gzip_w, gzip_r)
+  if err != nil { t.Errorf("io.Copy: count=%d, %v", count, err) }
+
+  err = gzip_w.Close()
+  if err != nil { t.Errorf("gzip_w.Close: count=%d, %v", count, err) }
+  util.Warnf("second")
+  err = pipe_w.Close()
+  if err != nil { t.Errorf("pipe_w.Close: count=%d, %v", count, err) }
+
+  util.WaitForClosure(t, ctx, done)
+  util.EqualsOrFailTest(t, "Bad length", buf.Len(), len(expect_msg))
+}
+
+func TestGzipSinkCloseRace(t *testing.T) {
+  ctx,cancel := context.WithTimeout(context.Background(), util.TestTimeout)
+  defer cancel()
+
+  pipes := []types.Pipe{
+    util.NewFileBasedPipe(ctx),
+    util.NewInMemPipe(ctx),
+  }
+  for _,pipe := range pipes {
+    testGzipSinkCloseRace_Helper(ctx, t, pipe.ReadEnd(), pipe.WriteEnd())
+  }
 }
 
