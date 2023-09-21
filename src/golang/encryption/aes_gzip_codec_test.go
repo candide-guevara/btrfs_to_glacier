@@ -437,7 +437,7 @@ func TestDecryptStreamLeaveSinkOpen_TimeoutBlockingWrite(t *testing.T) {
   stream_f := func(ctx context.Context, in types.ReadEndIf) (types.ReadEndIf, error) {
     write_end := util.NewWriteEndBlock(ctx, util.TestTimeout * 2)
     err := codec.DecryptStreamLeaveSinkOpen(ctx, types.CurKeyFp, in, write_end)
-    if err == nil { util.Fatalf("codec.DecryptStreamLeaveSinkOpen should return err on blocking write") }
+    if err == nil { t.Fatalf("codec.DecryptStreamLeaveSinkOpen should return err on blocking write") }
     return util.ReadEndFromBytes(nil), nil
   }
   testStream_TimeoutContinousReadUntilDeadline_Helper(t, stream_f)
@@ -539,6 +539,8 @@ func HelperDecryptStream_ErrPropagation(t *testing.T, err_injector func(types.Pi
     err_injector(pipe)
     decoded_pipe, err := codec.DecryptStream(ctx, types.CurKeyFp, pipe.ReadEnd())
     if err != nil { t.Logf("Could not decrypt: %v", err) }
+    // If we detect the error early no pipe is created.
+    if decoded_pipe == nil { break }
 
     done := make(chan error)
     go func() {

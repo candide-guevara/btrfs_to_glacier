@@ -254,8 +254,12 @@ func (self *aesGzipCodec) EncryptStream(
 
   go func() {
     var err error
+    compressed_in := NewCompressingSource(input)
     defer func() { util.CloseWriteEndWithError(pipe, util.Coalesce(input.GetErr(), err)) }()
-    defer func() { util.CloseWithError(input, err) }()
+    defer func() {
+      source_err := compressed_in.Close()
+      util.CloseWithError(input, util.Coalesce(err, source_err))
+    }()
     done := false
 
     first_block := block_buffer[0:self.block_size]
@@ -266,7 +270,7 @@ func (self *aesGzipCodec) EncryptStream(
 
     for !done && err == nil && ctx.Err() == nil {
       var count int
-      count, err = input.Read(block_buffer)
+      count, err = compressed_in.Read(block_buffer)
       if err != nil && err != io.EOF { return }
       if count == 0 && err == nil { continue }
       if count == 0 && err == io.EOF { err = nil; return }
@@ -313,39 +317,48 @@ func (self *aesGzipCodec) decryptStream_BlockIterator(
   for !done && err == nil && ctx.Err() == nil {
     done, _, err = self.decryptBlock_Helper(block_buffer, stream, input, output)
   }
-  return ctx.Err()
+  return util.Coalesce(err, ctx.Err())
 }
 
 func (self *aesGzipCodec) DecryptStream(
     ctx context.Context, key_fp types.PersistableString, input types.ReadEndIf) (types.ReadEndIf, error) {
-  var err error
-  pipe := util.NewFileBasedPipe(ctx)
-  defer func() { util.OnlyCloseWriteEndWhenError(pipe, util.Coalesce(input.GetErr(), err)) }()
-  defer func() { util.OnlyCloseWhenError(input, err) }()
-
   stream, err := self.getStreamDecrypter(key_fp)
-  if err != nil { return nil, err }
+  if err != nil || input.GetErr() != nil {
+    util.CloseWithError(input, err)
+    return nil, err
+  }
+
+  pipe := util.NewFileBasedPipe(ctx)
 
   go func() {
-    var err error
-    defer func() { util.CloseWriteEndWithError(pipe, util.Coalesce(input.GetErr(), err)) }()
-    defer func() { util.CloseWithError(input, err) }()
-    err = self.decryptStream_BlockIterator(ctx, stream, input, pipe.WriteEnd())
+    uncompressed_out := NewDecompressingSink(ctx, pipe.WriteEnd())
+    err = self.decryptStream_BlockIterator(ctx, stream, input, uncompressed_out)
+
+    sink_err := uncompressed_out.Close()
+    all_err := util.Coalesce(input.GetErr(), err, sink_err)
+    util.CloseWriteEndWithError(pipe, all_err)
+    util.CloseWithError(input, all_err)
   }()
-  return pipe.ReadEnd(), input.GetErr()
+  return pipe.ReadEnd(), nil
 }
 
 func (self *aesGzipCodec) DecryptStreamLeaveSinkOpen(
     ctx context.Context, key_fp types.PersistableString, input types.ReadEndIf, output io.WriteCloser) error {
-  var err error
-  defer func() { util.CloseWithError(input, err) }()
-  // We do not close on purpose, so that `output` can contain the chained streams from multiple calls.
-  defer func() { util.OnlyCloseWhenError(output, err) }()
-
   stream, err := self.getStreamDecrypter(key_fp)
-  if err != nil { return err }
+  if err != nil {
+    util.CloseWithError(output, err)
+    util.CloseWithError(input, err)
+    return err
+  }
 
-  err = self.decryptStream_BlockIterator(ctx, stream, input, output)
-  return util.Coalesce(input.GetErr(), err)
+  uncompressed_out := NewDecompressingSink(ctx, output)
+  err = self.decryptStream_BlockIterator(ctx, stream, input, uncompressed_out)
+
+  sink_err := uncompressed_out.Close()
+  all_err := util.Coalesce(input.GetErr(), err, sink_err)
+  // We do not close on purpose, so that `output` can contain the chained streams from multiple calls.
+  util.OnlyCloseWhenError(output, all_err)
+  util.CloseWithError(input, all_err)
+  return all_err
 }
 
