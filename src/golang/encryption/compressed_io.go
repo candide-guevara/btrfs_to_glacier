@@ -28,8 +28,8 @@ func NewCompressingSource_Gzip(source io.Reader) io.ReadCloser {
 }
 
 func NewCompressingSource(source io.Reader) io.ReadCloser {
-  return io.NopCloser(source)
-  //return NewCompressingSource_Gzip(source)
+  //return io.NopCloser(source)
+  return NewCompressingSource_Gzip(source)
 }
 
 type syncCloser struct {
@@ -81,7 +81,7 @@ type nopCloser struct { io.Writer }
 func (self nopCloser) Close() error { return nil }
 
 func NewDecompressingSink(ctx context.Context, sink io.Writer) io.WriteCloser {
-  return nopCloser{sink}
-  //return NewDecompressingSink_Gzip(ctx, sink)
+  //return nopCloser{sink}
+  return NewDecompressingSink_Gzip(ctx, sink)
 }
 

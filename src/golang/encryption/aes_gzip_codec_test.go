@@ -332,6 +332,56 @@ func TestEncryptStream_MoreData(t *testing.T) {
   util.EqualsOrFailTest(t, "Bad encryption len", len(data), 4096*32)
 }
 
+func TestEncryptStream_CompressibleData(t *testing.T) {
+  ctx,cancel := context.WithTimeout(context.Background(), util.TestTimeout)
+  defer cancel()
+
+  alphabet := []byte("repeat this short message forever and ever.")
+  expect_msg := bytes.Repeat(alphabet, 1024)
+  read_pipe := mocks.NewBigPreloadedPipe(ctx, expect_msg).ReadEnd()
+  codec := buildTestCodec(t)
+
+  var data_cod []byte
+  done_cod := make(chan []byte)
+  encoded_pipe, err := codec.EncryptStream(ctx, read_pipe)
+  if err != nil { t.Fatalf("Could not encrypt: %v", err) }
+  go func() {
+    defer close(done_cod)
+    defer encoded_pipe.Close()
+    data, err := io.ReadAll(encoded_pipe)
+    if err != nil { t.Errorf("ReadAll coding: %v", err) }
+    done_cod <- data
+  }()
+  select {
+    case data_cod = <-done_cod:
+    case <-ctx.Done(): t.Fatalf("TestEncryptStream_CompressibleData coding timeout")
+  }
+
+  var data_dec []byte
+  done_dec := make(chan []byte)
+  coded_input := mocks.NewBigPreloadedPipe(ctx, data_cod).ReadEnd()
+  decoded_pipe, err := codec.DecryptStream(ctx, types.CurKeyFp, coded_input)
+  if err != nil { t.Fatalf("Could not decrypt: %v", err) }
+  go func() {
+    defer close(done_dec)
+    defer decoded_pipe.Close()
+    data, err := io.ReadAll(decoded_pipe)
+    if err != nil { t.Errorf("ReadAll decoding: %v", err) }
+    done_dec <- data
+  }()
+  select {
+    case data_dec = <-done_dec:
+    case <-ctx.Done(): t.Fatalf("TestEncryptStream_CompressibleData decoding timeout")
+  }
+
+  if bytes.Compare(data_dec, expect_msg) != 0 {
+    t.Errorf("Bad encryption: %d / %d", len(expect_msg), len(data_dec))
+  }
+  if float64(len(data_cod)) > 0.5 * float64(len(expect_msg)) {
+    t.Errorf("Bad compression: %d / %d", len(expect_msg), len(data_cod))
+  }
+}
+
 func TestEncryptStreamInto_MoreData(t *testing.T) {
   read_pipe := util.ProduceRandomTextIntoPipe(context.TODO(), 4096, 32)
   decrypt_lambda := func(
