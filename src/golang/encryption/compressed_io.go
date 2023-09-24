@@ -71,7 +71,6 @@ func NewDecompressingSink_Zlib(ctx context.Context, sink io.Writer) io.WriteClos
     pip_err := reader.CloseWithError(util.Coalesce(new_err, cpy_err, cmp_err))
     all_err := util.Coalesce(new_err, cpy_err, cmp_err, pip_err)
     if all_err != nil { util.Warnf("NewDecompressingSink_Zlib: count=%d, %v", count, all_err) }
-    util.Warnf("first")
     close(done)
   }()
   return syncCloser{writer, ctx, done}
