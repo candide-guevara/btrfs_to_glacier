@@ -58,12 +58,28 @@ func NewSimpleDirMetadata(ctx context.Context, conf *pb.Config, part_uuid string
   return NewSimpleDirMetadataAdmin(ctx, conf, part_uuid)
 }
 
+func UnmarshalCompressedPbFromPath(path string, msg proto.Message) error {
+  f, err := os.Open(path)
+  if err != nil { return err }
+  unm_err := util.UnmarshalCompressedPb(f, msg)
+  cls_err := f.Close()
+  return util.Coalesce(unm_err, cls_err)
+}
+
+func MarshalCompressedPbFromPath(path string, msg proto.Message) error {
+  f, err := os.Create(path)
+  if err != nil { return err }
+  mrs_err := util.MarshalCompressedPb(f, msg)
+  cls_err := f.Close()
+  return util.Coalesce(mrs_err, cls_err)
+}
+
 func (self *SimpleDirMetadata) LoadPreviousStateFromDir(ctx context.Context) error {
   if self.InMemState() != nil { util.Fatalf("Cannot load state twice") }
   self.SetInMemState(&pb.AllMetadata{
     CreatedTs: uint64(time.Now().Unix()),
   })
-  err := util.UnmarshalGzProto(self.SymLink, self.InMemState())
+  err := UnmarshalCompressedPbFromPath(self.SymLink, self.InMemState())
   if err != nil && !errors.Is(err, os.ErrNotExist) { return err }
   return nil
 }
@@ -113,7 +129,7 @@ func (self *SimpleDirMetadata) SaveCurrentStateToDir(ctx context.Context) (strin
   prev_path,_ := fpmod.EvalSymlinks(self.SymLink)
   store_path := self.MetaVer(self.InMemState().CreatedTs)
 
-  err := util.MarshalGzProto(store_path, self.InMemState())
+  err := MarshalCompressedPbFromPath(store_path, self.InMemState())
   if err != nil { return "", err }
 
   if util.Exists(self.SymLink) {

@@ -70,7 +70,7 @@ func GetProto(
     ctx context.Context, client *s3.Client, bucket string, key string, msg proto.Message) error {
   data, err := GetObject(ctx, client, bucket, key)
   if err != nil { return err }
-  err = proto.Unmarshal(data, msg)
+  err = util.UnmarshalCompressedPb(bytes.NewReader(data), msg)
   return err
 }
 
@@ -88,9 +88,10 @@ func PutObject(
 
 func PutProto(
     ctx context.Context, client *s3.Client, bucket string, key string, msg proto.Message) error {
-  data, err := proto.Marshal(msg)
+  blob := new(bytes.Buffer)
+  err := util.MarshalCompressedPb(blob, msg)
   if err != nil { return nil }
-  return PutObject(ctx, client, bucket, key, data)
+  return PutObject(ctx, client, bucket, key, blob.Bytes())
 }
 
 func GetObjectOrDie(

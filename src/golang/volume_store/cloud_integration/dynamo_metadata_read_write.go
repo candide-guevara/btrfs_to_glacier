@@ -1,6 +1,7 @@
 package main
 
 import (
+  "bytes"
   "context"
   "fmt"
   "errors"
@@ -32,12 +33,13 @@ type genIterator interface {
 
 func toItem(key string, msg proto.Message) (map[string]dyn_types.AttributeValue, error) {
   typename := msg.ProtoReflect().Descriptor().FullName()
-  blob, err := proto.Marshal(msg)
+  blob := new(bytes.Buffer)
+  err := util.MarshalCompressedPb(blob, msg)
   if err != nil { return nil, err }
   item := map[string]dyn_types.AttributeValue{
     meta.Uuid_col: &dyn_types.AttributeValueMemberS{Value:key, },
     meta.Type_col: &dyn_types.AttributeValueMemberS{Value:string(typename), },
-    meta.Blob_col: &dyn_types.AttributeValueMemberB{Value:blob, },
+    meta.Blob_col: &dyn_types.AttributeValueMemberB{Value:blob.Bytes(), },
   }
   return item, nil
 }
@@ -72,7 +74,7 @@ func (self *dynReadWriteTester) getItem(ctx context.Context, key string, msg pro
   if err != nil { return err }
   data, err = getBlobFromItem(get_out.Item)
   if err != nil { return err }
-  err = proto.Unmarshal(data, msg)
+  err = util.UnmarshalCompressedPb(bytes.NewReader(data), msg)
   return err
 }
 

@@ -4,6 +4,7 @@ package aws_dynamodb_metadata
 // * Which replication settings to get 99.999 durability ? (already replicated in the aws region)
 
 import (
+  "bytes"
   "context"
   "errors"
   "fmt"
@@ -140,18 +141,17 @@ func (self *dynamoMetadata) ReadObject(ctx context.Context, key string, msg prot
   if err != nil { return err }
   data, err := self.getBlobFromItem(result.Item)
   if err != nil { return err }
-  err = proto.Unmarshal(data, msg)
+  err = util.UnmarshalCompressedPb(bytes.NewReader(data), msg)
   return err
 }
 
 // Create or updates
 func (self *dynamoMetadata) WriteObject(ctx context.Context, key string, msg proto.Message) error {
-  var err error
-  var blob []byte
   item := self.getItemKey(key, msg)
-  blob, err = proto.Marshal(msg)
+  blob := new(bytes.Buffer)
+  err := util.MarshalCompressedPb(blob, msg)
   if err != nil { return err }
-  item[self.blob_col] = &dyn_types.AttributeValueMemberB{Value: blob,}
+  item[self.blob_col] = &dyn_types.AttributeValueMemberB{Value: blob.Bytes(),}
   params := &dynamodb.PutItemInput{
     TableName: &self.tab_name,
     Item: item,
@@ -299,7 +299,7 @@ func (self *blobIterator) popBuffer(msg proto.Message) error {
   self.buf_next += 1
   data, err := self.parent.getBlobFromItem(item)
   if err != nil { return err }
-  err = proto.Unmarshal(data, msg)
+  err = util.UnmarshalCompressedPb(bytes.NewReader(data), msg)
   return err
 }
 

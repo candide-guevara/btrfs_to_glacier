@@ -1,6 +1,7 @@
 package aws_dynamodb_metadata
 
 import (
+  "bytes"
   "context"
   "errors"
   "fmt"
@@ -198,15 +199,17 @@ func (self *mockDynamoDbClient) putForTest(k string, p proto.Message) {
     Key: k,
     Type: string(p.ProtoReflect().Descriptor().FullName()),
   }
-  if b, err := proto.Marshal(p); err == nil { self.Data[key] = b }
+  b := new(bytes.Buffer)
+  if err := util.MarshalCompressedPb(b, p); err == nil { self.Data[key] = b.Bytes() }
 }
 func (self *mockDynamoDbClient) getForTest(k string, p proto.Message) bool {
   key := keyAndtype{
     Key: k,
     Type: string(p.ProtoReflect().Descriptor().FullName()),
   }
-  if b, found := self.Data[key]; found {
-    if err := proto.Unmarshal(b, p); err != nil { return false }
+  if data, found := self.Data[key]; found {
+    b := bytes.NewReader(data)
+    if err := util.UnmarshalCompressedPb(b, p); err != nil { return false }
     return true
   }
   return false

@@ -1,6 +1,7 @@
 package aws_dynamodb_metadata
 
 import (
+  "bytes"
   "context"
   "errors"
   "fmt"
@@ -14,8 +15,6 @@ import (
   "github.com/aws/aws-sdk-go-v2/aws"
   "github.com/aws/aws-sdk-go-v2/service/dynamodb"
   dyn_types "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-
-  "google.golang.org/protobuf/proto"
 )
 
 const (
@@ -174,7 +173,6 @@ func (self *dynamoAdminMetadata) DeleteMetadataUuids(
 
 func (self *dynamoAdminMetadata) ReplaceSnapshotSeqHead(
     ctx context.Context, head *pb.SnapshotSeqHead) (*pb.SnapshotSeqHead, error) {
-  var blob []byte
   var err error
   var put_out *dynamodb.PutItemOutput
   old_head := &pb.SnapshotSeqHead{}
@@ -182,9 +180,10 @@ func (self *dynamoAdminMetadata) ReplaceSnapshotSeqHead(
   if err != nil { return nil, err }
 
   item := self.getItemKey(head.Uuid, head)
-  blob, err = proto.Marshal(head)
+  blob := new(bytes.Buffer)
+  err = util.MarshalCompressedPb(blob, head)
   if err != nil { return nil, err }
-  item[self.blob_col] = &dyn_types.AttributeValueMemberB{Value: blob,}
+  item[self.blob_col] = &dyn_types.AttributeValueMemberB{Value: blob.Bytes(),}
 
   // We use a condition expression to trigger an error in case the key does not exist.
   // Otherwise we cannot distinguish between the item not existing and a successful delete.
@@ -202,9 +201,9 @@ func (self *dynamoAdminMetadata) ReplaceSnapshotSeqHead(
   if err != nil { return nil, err }
 
   util.PbInfof("Wrote head: %v", head)
-  blob, err = self.getBlobFromItem(put_out.Attributes)
+  buf, err := self.getBlobFromItem(put_out.Attributes)
   if err != nil { return nil, err }
-  err = proto.Unmarshal(blob, old_head)
+  err = util.UnmarshalCompressedPb(bytes.NewReader(buf), old_head)
   return old_head, err
 }
 

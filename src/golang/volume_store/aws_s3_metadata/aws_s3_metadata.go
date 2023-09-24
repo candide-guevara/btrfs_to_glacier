@@ -16,8 +16,6 @@ import (
   "github.com/aws/aws-sdk-go-v2/aws"
   "github.com/aws/aws-sdk-go-v2/service/s3"
   s3_types "github.com/aws/aws-sdk-go-v2/service/s3/types"
-
-  "google.golang.org/protobuf/proto"
 )
 
 const (
@@ -84,7 +82,7 @@ func (self *S3Metadata) LoadPreviousStateFromS3(ctx context.Context) error {
   defer get_out.Body.Close()
   data, err := io.ReadAll(get_out.Body)
   if err != nil { return err }
-  err = proto.Unmarshal(data, self.InMemState())
+  err = util.UnmarshalCompressedPb(bytes.NewReader(data), self.InMemState())
   return err
 }
 
@@ -93,14 +91,14 @@ func (self *S3Metadata) SaveCurrentStateToS3(ctx context.Context) (string, error
   self.InMemState().CreatedTs = uint64(time.Now().Unix())
 
   content_type := "application/octet-stream"
-  data, err := proto.Marshal(self.InMemState())
+  blob := new(bytes.Buffer)
+  err := util.MarshalCompressedPb(blob, self.InMemState())
   if err != nil { return "", err }
-  reader := bytes.NewReader(data)
 
   put_in := &s3.PutObjectInput{
     Bucket: &self.Common.BackupConf.MetadataBucketName,
     Key:    &self.Key,
-    Body:   reader,
+    Body:   blob,
     ACL:    s3_types.ObjectCannedACLBucketOwnerFullControl,
     ContentType:  &content_type,
     StorageClass: s3_types.StorageClassStandard,

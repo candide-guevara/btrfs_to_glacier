@@ -2,7 +2,7 @@ package util
 
 import (
   "bytes"
-  "compress/gzip"
+  "compress/zlib"
   "context"
   "crypto/md5"
   "errors"
@@ -350,12 +350,10 @@ func Exists(path string) bool {
   return !IsNotExist(err)
 }
 
-func UnmarshalGzProto(path string, msg proto.Message) error {
-  f, err := os.Open(path)
-  if err != nil { return err }
-  defer f.Close()
-
-  reader, err := gzip.NewReader(f)
+// Does not own `source`, it will NOT close it.
+// Will read all data in `source` (can block waiting for EOF).
+func UnmarshalCompressedPb(source io.Reader, msg proto.Message) error {
+  reader, err := zlib.NewReader(source)
   if err != nil { return err }
   defer reader.Close()
 
@@ -365,18 +363,15 @@ func UnmarshalGzProto(path string, msg proto.Message) error {
   return err
 }
 
-func MarshalGzProto(path string, msg proto.Message) error {
-  f, err := os.Create(path)
-  if err != nil { return err }
-  defer f.Close()
-
+// Does not own `sink`, it will NOT close it.
+func MarshalCompressedPb(sink io.Writer, msg proto.Message) error {
   data, err := proto.Marshal(msg)
   if err != nil { return err }
 
-  writer := gzip.NewWriter(f)
-  _,err = writer.Write(data)
-  if err != nil { writer.Close(); return err }
-  return writer.Close()
+  writer := zlib.NewWriter(sink)
+  _, wrt_err := writer.Write(data)
+  cls_err := writer.Close()
+  return Coalesce(wrt_err, cls_err)
 }
 
 func RemoveAll(path string) error {

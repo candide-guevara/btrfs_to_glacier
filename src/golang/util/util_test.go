@@ -1,11 +1,16 @@
 package util
 
-import "context"
-import "io"
-import "math/rand"
-import "testing"
-import "time"
-import "btrfs_to_glacier/types"
+import (
+  "bytes"
+  "context"
+  "io"
+  "math/rand"
+  "testing"
+  "time"
+
+  pb "btrfs_to_glacier/messages"
+  "btrfs_to_glacier/types"
+)
 
 func runCmdGetOutputOrDie(
     ctx context.Context, t *testing.T, args []string) (<-chan []byte, types.ReadEndIf) {
@@ -345,5 +350,16 @@ func TestStartCmdWithPipedOutput_Timeout(t *testing.T) {
     case <-time.After(TestTimeout):
       t.Fatalf("%v did NOT timeout", args)
   }
+}
+
+func TestMarshalCompressedPb(t *testing.T) {
+  sv := DummySubVolume("some_uuid")
+  buf := new(bytes.Buffer)
+  err := MarshalCompressedPb(buf, sv)
+  if err != nil { t.Fatalf("MarshalCompressedPb(): %v", err) }
+  sv_unmarshalled := &pb.SubVolume{}
+  err = UnmarshalCompressedPb(buf, sv_unmarshalled)
+  if err != nil { t.Fatalf("UnmarshalCompressedPb(): %v", err) }
+  EqualsOrFailTest(t, "Bad sv", sv_unmarshalled, sv)
 }
 

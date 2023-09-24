@@ -37,7 +37,7 @@ func (self *SimpleDirRw) PutState(state *pb.AllMetadata) error {
   if state == nil { return nil }
 
   store_path := fpmod.Join(MetaDir(self.Part), "dummystate")
-  if err := util.MarshalGzProto(store_path, state); err != nil { return err }
+  if err := MarshalCompressedPbFromPath(store_path, state); err != nil { return err }
   return os.Symlink(store_path, SymLink(self.Part))
 }
 
@@ -53,7 +53,7 @@ func (self *SimpleDirRw) DeleteState(del_dir bool) {
 
 func (self *SimpleDirRw) GetState() *pb.AllMetadata {
   state := &pb.AllMetadata{}
-  err := util.UnmarshalGzProto(SymLink(self.Part), state)
+  err := UnmarshalCompressedPbFromPath(SymLink(self.Part), state)
   if err != nil && util.IsNotExist(err) { return nil }
   if err != nil { util.Fatalf("SimpleDirRw.GetState: %v", err) }
   return state

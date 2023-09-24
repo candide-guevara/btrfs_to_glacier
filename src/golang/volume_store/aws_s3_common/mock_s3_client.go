@@ -60,17 +60,18 @@ func (self *MockS3Client) DelData(key string) {
 func (self *MockS3Client) GetProto(key string, msg proto.Message) error {
   data,found := self.Data[key];
   if !found { return fmt.Errorf("not_found") }
-  err := proto.Unmarshal(data, msg)
+  err := util.UnmarshalCompressedPb(bytes.NewReader(data), msg)
   return err
 }
 
 func (self *MockS3Client) PutProto(
     key string, msg proto.Message, class s3_types.StorageClass, ongoing bool) error {
-  data, err := proto.Marshal(msg)
+  blob := new(bytes.Buffer)
+  err := util.MarshalCompressedPb(blob, msg)
   if err != nil { return err }
-  self.Data[key] = make([]byte, len(data))
-  copy(self.Data[key], data)
-  //self.Data[key] =  data
+  self.Data[key] = make([]byte, blob.Len())
+  copy(self.Data[key], blob.Bytes())
+  //self.Data[key] =  blob.Bytes()
   self.Class[key] = class
   if class != s3_types.StorageClassStandard {
     self.RestoreStx[key] = fmt.Sprintf(`ongoing-request="%v"`, ongoing)
