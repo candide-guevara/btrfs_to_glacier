@@ -42,6 +42,7 @@ func buildTestStorage(
 
 func buildTestStorageWithChunkLen(t *testing.T, chunk_len uint64) (*Storage, *ChunkIoForTestImpl) {
   codec := new(mocks.Codec)
+  codec.Fingerprint = types.PersistableString{"mock_fp"}
   return buildTestStorage(t, chunk_len, codec)
 }
 
@@ -85,11 +86,10 @@ func TestAllMemOnlyStorage(t *testing.T) {
   RunAllTestStorage(t, fixture)
 }
 
-func HelperWriteReadWithRealCodec(
-    t *testing.T, chunk_len uint64, total_len uint64) *pb.SnapshotChunks {
+func HelperWriteRead(
+    t *testing.T, storage *Storage, total_len uint64) *pb.SnapshotChunks {
   ctx, cancel := context.WithTimeout(context.Background(), util.TestTimeout)
   defer cancel()
-  storage,_ := buildTestStorageRealCodec(t, chunk_len)
   data := util.GenerateRandomTextData(int(total_len))
   expect_data := make([]byte, total_len)
   copy(expect_data, data)
@@ -121,7 +121,8 @@ func HelperWriteReadWithRealCodec(
 func TestWriteReadWithRealCodec_OneChunk(t *testing.T) {
   const chunk_len = 128
   const total_len = 64
-  written := HelperWriteReadWithRealCodec(t, chunk_len, total_len)
+  storage,_ := buildTestStorageRealCodec(t, chunk_len)
+  written := HelperWriteRead(t, storage, total_len)
   util.EqualsOrFailTest(t, "Bad chunk count", len(written.Chunks), 1)
 }
 
@@ -136,22 +137,30 @@ func TestWriteReadWithRealCodec_NoData(t *testing.T) {
   if err == nil { t.Errorf("Expected error") }
 }
 
-func TestWriteReadWithRealCodec_2ChunksWithIv(t *testing.T) {
+func TestWriteRead_2ChunksWithIv(t *testing.T) {
   const chunk_len = 64
   const total_len = chunk_len + 1
-  codec := buildTestCodec(t)
-  expect_size := 1 + codec.EncryptionHeaderLen()
-  written := HelperWriteReadWithRealCodec(t, chunk_len, total_len)
+  storage,_ := buildTestStorageRealCodec(t, chunk_len)
+  written := HelperWriteRead(t, storage, total_len)
+  util.EqualsOrFailTest(t, "Bad chunk count", len(written.Chunks), 2)
+
+  expect_size := 1 + new(mocks.Codec).EncryptionHeaderLen()
+  storage,_ = buildTestStorageWithChunkLen(t, chunk_len)
+  written = HelperWriteRead(t, storage, total_len)
   util.EqualsOrFailTest(t, "Bad chunk count", len(written.Chunks), 2)
   util.EqualsOrFailTest(t, "Bad 2nd chunk", written.Chunks[1].Size, expect_size)
 }
 
-func TestWriteReadWithRealCodec_IVandDataExactChunk(t *testing.T) {
+func TestWriteRead_IVandDataExactChunk(t *testing.T) {
   const chunk_len = 64
   const total_len = chunk_len
-  codec := buildTestCodec(t)
-  expect_size := chunk_len + codec.EncryptionHeaderLen()
-  written := HelperWriteReadWithRealCodec(t, chunk_len, total_len)
+  storage,_ := buildTestStorageRealCodec(t, chunk_len)
+  written := HelperWriteRead(t, storage, total_len)
+  util.EqualsOrFailTest(t, "Bad chunk count", len(written.Chunks), 1)
+
+  expect_size := chunk_len + new(mocks.Codec).EncryptionHeaderLen()
+  storage,_ = buildTestStorageWithChunkLen(t, chunk_len)
+  written = HelperWriteRead(t, storage, total_len)
   util.EqualsOrFailTest(t, "Bad chunk count", len(written.Chunks), 1)
   util.EqualsOrFailTest(t, "Bad 1st chunk", written.Chunks[0].Size, expect_size)
 }
@@ -159,7 +168,8 @@ func TestWriteReadWithRealCodec_IVandDataExactChunk(t *testing.T) {
 func TestWriteReadWithRealCodec_ManyChunks(t *testing.T) {
   const chunk_len = 64
   const total_len = chunk_len * 3
-  written := HelperWriteReadWithRealCodec(t, chunk_len, total_len)
+  storage,_ := buildTestStorageRealCodec(t, chunk_len)
+  written := HelperWriteRead(t, storage, total_len)
   util.EqualsOrFailTest(t, "Bad chunk count", len(written.Chunks), 3)
 }
 
