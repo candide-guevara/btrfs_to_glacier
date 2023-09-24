@@ -28,7 +28,7 @@ func TestGzipSink_BadData(t *testing.T) {
   if err != nil { t.Errorf("gzip.Close: count=%d, %v", count, err) }
 }
 
-func TestGzipSmallMsg(t *testing.T) {
+func TestGzipSmallMsg_Direct(t *testing.T) {
   ctx,cancel := context.WithTimeout(context.Background(), util.TestTimeout)
   defer cancel()
   buf := new(bytes.Buffer)
@@ -44,6 +44,24 @@ func TestGzipSmallMsg(t *testing.T) {
 
   util.EqualsOrFailTest(t, "Bad length", buf.Len(), len(expect_msg))
   util.EqualsOrFailTest(t, "Bad content", buf.Bytes(), expect_msg)
+}
+
+func TestGzipSmallMsg_ViaBuffer(t *testing.T) {
+  ctx,cancel := context.WithTimeout(context.Background(), util.TestTimeout)
+  defer cancel()
+  buf := new(bytes.Buffer)
+  tmp := new(bytes.Buffer)
+  expect_msg := []byte("this is some plain text data")
+  read_pipe := mocks.NewPreloadedPipe(expect_msg).ReadEnd()
+
+  gzip_r := NewCompressingSource_Gzip(read_pipe)
+  gzip_w := NewDecompressingSink_Gzip(ctx, buf)
+  count, err := io.Copy(tmp, gzip_r)
+  if err != nil { t.Errorf("io.Copy1: count=%d, %v", count, err) }
+  count, err = io.Copy(gzip_w, tmp)
+  if err != nil { t.Errorf("io.Copy2: count=%d, %v", count, err) }
+  err = gzip_w.Close()
+  if err != nil { t.Errorf("gzip.Close: count=%d, %v", count, err) }
 }
 
 func TestGzipSmallMsg_ManyWrites(t *testing.T) {

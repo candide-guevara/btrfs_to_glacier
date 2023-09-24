@@ -292,7 +292,7 @@ func (self *aesGzipCodec) decryptBlock_Helper(buffer []byte, stream cipher.Strea
   if count == 0 && err == nil { return false, 0, nil }
   if count == 0 && err == io.EOF { return true, 0, nil }
   // it is valid to reuse slice for output if offsets are the same
-  stream.XORKeyStream(buffer, buffer)
+  stream.XORKeyStream(buffer[:count], buffer[:count])
 
   _, err = output.Write(buffer[:count])
   if err != nil { return true, count, err }
