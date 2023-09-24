@@ -23,23 +23,23 @@ const secret_key_2 = "\xe7\xf5\x4b\xe0\x45\x33\xb7\x50\x8c\x72\x49\xaf\x25\x44\x
 const fp_persisted_key_2 = "RWgSa2EIDmUr5FFExM7AgQ=="
 var init_keys []string
 
-func buildTestCodec(t *testing.T) *aesGzipCodec {
+func buildTestCodec(t *testing.T) *aesZlibCodec {
   TestOnlyFlush()
   init_keys = []string {persisted_key_1, persisted_key_2,}
   return buildTestCodecChooseEncKey(t, init_keys)
 }
 
-func buildTestCodecChooseEncKey(t *testing.T, keys []string) *aesGzipCodec {
+func buildTestCodecChooseEncKey(t *testing.T, keys []string) *aesZlibCodec {
   conf := util.LoadTestConf()
   conf.Encryption.Keys = keys
   codec, err := NewCodecHelper(conf, TestOnlyFixedPw)
   if err != nil { t.Fatalf("Could not create codec: %v", err) }
-  return codec.(*aesGzipCodec)
+  return codec.(*aesZlibCodec)
 }
 
-func TestAesGzipCodecGlobalState_BuildKeyring(t *testing.T) {
+func TestAesZlibCodecGlobalState_BuildKeyring(t *testing.T) {
   keys := []string {persisted_key_1, persisted_key_2,}
-  state := NewAesGzipCodecGlobalState()
+  state := NewAesZlibCodecGlobalState()
   if err := state.DerivatePassphrase(false, TestOnlyFixedPw); err != nil {
     t.Fatalf("state.DerivatePassphrase: %v", err)
   }
@@ -57,9 +57,9 @@ func TestAesGzipCodecGlobalState_BuildKeyring(t *testing.T) {
   util.EqualsOrFailTest(t, "Bad keyring", len(state.Keyring), expect_key_count)
 }
 
-func TestAesGzipCodecGlobalState_BuildKeyring_Idempotent(t *testing.T) {
+func TestAesZlibCodecGlobalState_BuildKeyring_Idempotent(t *testing.T) {
   keys := []string {persisted_key_1, persisted_key_2, persisted_key_1, persisted_key_2, persisted_key_2,}
-  state := NewAesGzipCodecGlobalState()
+  state := NewAesZlibCodecGlobalState()
   if err := state.DerivatePassphrase(false, TestOnlyFixedPw); err != nil {
     t.Fatalf("state.DerivatePassphrase: %v", err)
   }

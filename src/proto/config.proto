@@ -132,7 +132,7 @@ message Encryption {
     INVALID = 0;
     NOOP = 1;
     AES = 2;
-    AES_GZIP = 3;
+    AES_ZLIB = 3;
   }
   EncryptionType type = 1;
   // The first key is used to encrypt new content.

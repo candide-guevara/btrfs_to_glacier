@@ -55,7 +55,7 @@ func (self Factory) BuildCodec() (types.Codec, error) {
   if self.Conf.Encryption.Type == pb.Encryption_NOOP {
     return encryption.NewNoopCodec(self.Conf)
   }
-  if self.Conf.Encryption.Type == pb.Encryption_AES {
+  if self.Conf.Encryption.Type == pb.Encryption_AES_ZLIB {
     return encryption.NewCodec(self.Conf)
   }
   return nil, fmt.Errorf("%w bad encryption type", ErrBadConfig)

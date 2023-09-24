@@ -17,15 +17,15 @@ import (
 )
 
 // Keeps key material in global state to ask for passwords just once.
-type AesGzipCodecGlobalState struct {
+type AesZlibCodecGlobalState struct {
   Mutex   *sync.Mutex
   Keyring map[types.PersistableString]types.SecretKey
   XorKey  types.SecretKey
 }
-var globalState AesGzipCodecGlobalState
+var globalState AesZlibCodecGlobalState
 
-func NewAesGzipCodecGlobalState() *AesGzipCodecGlobalState {
-  return &AesGzipCodecGlobalState{
+func NewAesZlibCodecGlobalState() *AesZlibCodecGlobalState {
+  return &AesZlibCodecGlobalState{
     Mutex: new(sync.Mutex),
     Keyring: make(map[types.PersistableString]types.SecretKey),
     XorKey: types.SecretKey{[]byte("")},
@@ -33,12 +33,12 @@ func NewAesGzipCodecGlobalState() *AesGzipCodecGlobalState {
 }
 
 func init() {
-  globalState = *NewAesGzipCodecGlobalState()
+  globalState = *NewAesZlibCodecGlobalState()
 }
 
 // This class uses "Explicit initialization vectors" by prepending a single random block to the plaintext.
 // This way the Init Vector does not need to be stored anywhere.
-type aesGzipCodec struct {
+type aesZlibCodec struct {
   conf       *pb.Config
   block_size int
   cur_fp     types.PersistableString
@@ -51,7 +51,7 @@ func NewCodec(conf *pb.Config) (types.Codec, error) {
 }
 
 func NewCodecHelper(conf *pb.Config, pw_prompt types.PwPromptF) (types.Codec, error) {
-  codec := &aesGzipCodec{
+  codec := &aesZlibCodec{
     conf: conf,
     block_size: aes.BlockSize,
   }
@@ -71,7 +71,7 @@ func NewCodecHelper(conf *pb.Config, pw_prompt types.PwPromptF) (types.Codec, er
   return codec, nil
 }
 
-func (self *AesGzipCodecGlobalState) DerivatePassphrase(
+func (self *AesZlibCodecGlobalState) DerivatePassphrase(
     overwrite bool, pw_prompt types.PwPromptF) error {
   self.Mutex.Lock()
   defer self.Mutex.Unlock()
@@ -83,7 +83,7 @@ func (self *AesGzipCodecGlobalState) DerivatePassphrase(
   return nil
 }
 
-func (self *AesGzipCodecGlobalState) DecodeAndAddToKeyring(
+func (self *AesZlibCodecGlobalState) DecodeAndAddToKeyring(
     enc_str types.PersistableKey) (types.SecretKey, types.PersistableString) {
   self.Mutex.Lock()
   defer self.Mutex.Unlock()
@@ -109,7 +109,7 @@ func FingerprintKey(key types.SecretKey) types.PersistableString {
   return types.PersistableString{raw_fp}
 }
 
-func (self *AesGzipCodecGlobalState) decodeEncryptionKey_MustHoldMutex(
+func (self *AesZlibCodecGlobalState) decodeEncryptionKey_MustHoldMutex(
     enc_key types.PersistableKey) types.SecretKey {
   if locked := self.Mutex.TryLock(); locked { util.Fatalf("Must hold mutex when calling") }
 
@@ -130,7 +130,7 @@ func TestOnlyDecodeEncryptionKey(enc_key types.PersistableKey) types.SecretKey {
   return globalState.decodeEncryptionKey_MustHoldMutex(enc_key)
 }
 
-func (self *AesGzipCodecGlobalState) encodeEncryptionKey_MustHoldMutex(
+func (self *AesZlibCodecGlobalState) encodeEncryptionKey_MustHoldMutex(
     dec_key types.SecretKey) types.PersistableKey {
   if locked := self.Mutex.TryLock(); locked { util.Fatalf("Must hold mutex when calling") }
   if len(dec_key.B) != len(self.XorKey.B) { util.Fatalf("Bad key length") }
@@ -148,7 +148,7 @@ func TestOnlyEncodeEncryptionKey(dec_key types.SecretKey) types.PersistableKey {
   return globalState.encodeEncryptionKey_MustHoldMutex(dec_key)
 }
 
-func (self *AesGzipCodecGlobalState) AddToKeyringThenEncode(
+func (self *AesZlibCodecGlobalState) AddToKeyringThenEncode(
     dec_key types.SecretKey) (types.PersistableKey, types.PersistableString, error) {
   self.Mutex.Lock()
   defer self.Mutex.Unlock()
@@ -163,7 +163,7 @@ func (self *AesGzipCodecGlobalState) AddToKeyringThenEncode(
   return enc_key, fp, nil
 }
 
-func (self *AesGzipCodecGlobalState) Get(fp types.PersistableString) (types.SecretKey, error) {
+func (self *AesZlibCodecGlobalState) Get(fp types.PersistableString) (types.SecretKey, error) {
   self.Mutex.Lock()
   defer self.Mutex.Unlock()
   if dec_key,found := self.Keyring[fp]; !found {
@@ -187,7 +187,7 @@ func TestOnlyFlush() {
   globalState.XorKey = types.SecretKey{[]byte("")}
 }
 
-func (self *AesGzipCodecGlobalState) EncodeAllInKeyring(
+func (self *AesZlibCodecGlobalState) EncodeAllInKeyring(
     first_fp types.PersistableString) ([]types.PersistableKey, error) {
   self.Mutex.Lock()
   defer self.Mutex.Unlock()
@@ -205,9 +205,9 @@ func (self *AesGzipCodecGlobalState) EncodeAllInKeyring(
   return persisted_keys, nil
 }
 
-func (self *aesGzipCodec) EncryptionHeaderLen() int { return self.block_size }
+func (self *aesZlibCodec) EncryptionHeaderLen() int { return self.block_size }
 
-func (self *aesGzipCodec) CreateNewEncryptionKey() (types.PersistableKey, error) {
+func (self *aesZlibCodec) CreateNewEncryptionKey() (types.PersistableKey, error) {
   const AES_256_KEY_LEN = 32
   null_key := types.PersistableKey{""}
 
@@ -223,17 +223,17 @@ func (self *aesGzipCodec) CreateNewEncryptionKey() (types.PersistableKey, error)
   return enc_key, nil
 }
 
-func (self *aesGzipCodec) CurrentKeyFingerprint() types.PersistableString {
+func (self *aesZlibCodec) CurrentKeyFingerprint() types.PersistableString {
   return self.cur_fp
 }
 
-func (self *aesGzipCodec) ReEncryptKeyring(
+func (self *aesZlibCodec) ReEncryptKeyring(
     pw_prompt types.PwPromptF) ([]types.PersistableKey, error) {
   if err := globalState.DerivatePassphrase(true, pw_prompt); err != nil { return nil, err }
   return globalState.EncodeAllInKeyring(self.CurrentKeyFingerprint())
 }
 
-func (self *aesGzipCodec) getStreamDecrypter(key_fp types.PersistableString) (cipher.Stream, error) {
+func (self *aesZlibCodec) getStreamDecrypter(key_fp types.PersistableString) (cipher.Stream, error) {
   var stream cipher.Stream
   if len(key_fp.S) == 0 || key_fp.S == self.cur_fp.S {
     stream = AesStreamDecrypter(self.cur_key)
@@ -245,7 +245,7 @@ func (self *aesGzipCodec) getStreamDecrypter(key_fp types.PersistableString) (ci
   return stream, nil
 }
 
-func (self *aesGzipCodec) EncryptStream(
+func (self *aesZlibCodec) EncryptStream(
     ctx context.Context, input types.ReadEndIf) (types.ReadEndIf, error) {
   pipe := util.NewInMemPipe(ctx)
   defer func() { util.OnlyCloseWriteEndWhenError(pipe, input.GetErr()) }()
@@ -284,7 +284,7 @@ func (self *aesGzipCodec) EncryptStream(
   return pipe.ReadEnd(), input.GetErr()
 }
 
-func (self *aesGzipCodec) decryptBlock_Helper(buffer []byte, stream cipher.Stream, input io.Reader, output io.Writer) (bool, int, error) {
+func (self *aesZlibCodec) decryptBlock_Helper(buffer []byte, stream cipher.Stream, input io.Reader, output io.Writer) (bool, int, error) {
   count, err := input.Read(buffer)
   if err != nil && err != io.EOF {
     return true, count, fmt.Errorf("DecryptStream failed reading: %v", err)
@@ -300,7 +300,7 @@ func (self *aesGzipCodec) decryptBlock_Helper(buffer []byte, stream cipher.Strea
   return (err == io.EOF), count, nil
 }
 
-func (self *aesGzipCodec) decryptStream_BlockIterator(
+func (self *aesZlibCodec) decryptStream_BlockIterator(
     ctx context.Context, stream cipher.Stream, input io.Reader, output io.Writer) error {
   var err error
   var count int
@@ -320,7 +320,7 @@ func (self *aesGzipCodec) decryptStream_BlockIterator(
   return util.Coalesce(err, ctx.Err())
 }
 
-func (self *aesGzipCodec) DecryptStream(
+func (self *aesZlibCodec) DecryptStream(
     ctx context.Context, key_fp types.PersistableString, input types.ReadEndIf) (types.ReadEndIf, error) {
   stream, err := self.getStreamDecrypter(key_fp)
   if err != nil || input.GetErr() != nil {
@@ -342,7 +342,7 @@ func (self *aesGzipCodec) DecryptStream(
   return pipe.ReadEnd(), nil
 }
 
-func (self *aesGzipCodec) DecryptStreamLeaveSinkOpen(
+func (self *aesZlibCodec) DecryptStreamLeaveSinkOpen(
     ctx context.Context, key_fp types.PersistableString, input types.ReadEndIf, output io.WriteCloser) error {
   stream, err := self.getStreamDecrypter(key_fp)
   if err != nil {
