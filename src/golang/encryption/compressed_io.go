@@ -13,19 +13,15 @@ import (
 // `source` will not be closed by this method.
 func NewCompressingSource_Gzip(source io.Reader) io.ReadCloser {
   reader, writer := io.Pipe()
-  gzip_w := gzip.NewWriter(writer)
+  gzip_w, err := gzip.NewWriterLevel(writer, gzip.BestCompression)
+  if err != nil { util.Fatalf("gzip.NewWriterLevel: %w", err) }
   go func() {
-    var fls_err, cmp_err error
+    var cmp_err error
     count, cpy_err := io.Copy(gzip_w, source)
     // Do not write anything else in case there was a copy error
-    if cpy_err == nil {
-      // BE CAREFUL IT IS A TRAP !
-      // `gzip.Writer.Close()` does not flush.
-      fls_err = gzip_w.Flush()
-      cmp_err = gzip_w.Close()
-    }
-    pip_err := writer.CloseWithError(util.Coalesce(cpy_err, fls_err, cmp_err))
-    all_err := util.Coalesce(cpy_err, fls_err, cmp_err, pip_err)
+    if cpy_err == nil { cmp_err = gzip_w.Close() }
+    pip_err := writer.CloseWithError(util.Coalesce(cpy_err, cmp_err))
+    all_err := util.Coalesce(cpy_err, cmp_err, pip_err)
     if all_err != nil { util.Warnf("NewCompressingSource_Gzip: count=%d, %v", count, all_err) }
   }()
   return reader
