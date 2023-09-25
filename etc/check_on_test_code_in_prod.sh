@@ -10,6 +10,7 @@ CANDIDATES=(
 for ff in "${CANDIDATES[@]}"; do
   #echo "Checking '$ff' ..."
   [[ "$ff" = ./volume_store/cloud_integration/* ]] && continue
+  [[ "$ff" = ./encryption/fuzz_correctness/* ]] && continue
   gawk '
     /^func.*TestOnly/ { line_ok = 1; }
     /^\/\/.*TestOnly/ { line_ok = 1; }
