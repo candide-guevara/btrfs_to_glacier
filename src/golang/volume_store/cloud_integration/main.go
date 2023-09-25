@@ -7,6 +7,7 @@ import (
   "time"
 
   pb "btrfs_to_glacier/messages"
+  "btrfs_to_glacier/shim"
   "btrfs_to_glacier/util"
   "btrfs_to_glacier/volume_store/aws_s3_common"
 
@@ -17,9 +18,11 @@ import (
 
 func main() {
   util.Infof("cloud_integration run")
+  linuxutil, _ := shim.NewLinuxutil(nil)
+  linuxutil.DropRootOrDie()
 
   ctx := context.Background()
-  conf, aws_conf := LoadAwsConfForExperimentalUser()
+  conf, aws_conf := LoadAwsConfForExperimentalUser(linuxutil)
   //conf = useUniqueInfrastructureNames(conf)
 
   TestCallerIdentity(ctx, conf, aws_conf)
@@ -34,7 +37,7 @@ func TestCallerIdentity(ctx context.Context, conf *pb.Config, aws_conf *aws.Conf
   var id_int int
   var account_id string
   account_id, err = aws_s3_common.GetAccountId(ctx, aws_conf)
-  if err != nil { util.Fatalf("%v", err) }
+  if err != nil { util.Fatalf("aws_s3_common.GetAccountId: %v", err) }
   id_int, err = strconv.Atoi(account_id)
   if err != nil || id_int < 1 { util.Fatalf("invalid account id") }
 }

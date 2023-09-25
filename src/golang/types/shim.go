@@ -41,6 +41,13 @@ type Filesystem struct {
   Mounts []*MountEntry
 }
 
+// os/user.User type is not convenient because it uses strings instead of ints
+type User struct {
+  Name     string
+  HomeDir  string
+  Uid, Gid int
+}
+
 // Implementations must be thread-safe.
 type Linuxutil interface {
   // Returns true if this process is running with CAP_SYS_ADMIN privileges.
@@ -56,6 +63,7 @@ type Linuxutil interface {
   // Only works if go binary invoked via `sudo`.
   // Returns a function that can be called to restore back privileges.
   DropRoot() (func(), error)
+  DropRootOrDie() func()
   // Obtains root privileges back or dies if `seteuid` clib call fails.
   // Only works if go binary invoked via `sudo`.
   // Returns a function that can be called to restore user permissions.
@@ -64,6 +72,9 @@ type Linuxutil interface {
   // Sets new owner of file/dir path to be the real user.
   // Noop if already owned by the real user.
   ChownAsRealUser(string) error
+  // If run as sudo, then return the real user.
+  // Otherwise return the user running the process.
+  GetRealUser() (User, error)
 
   // Mounts the device and checks it got mounted at desired path.
   // Mounted tree will belong to the executing user.

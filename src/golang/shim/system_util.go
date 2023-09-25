@@ -23,13 +23,8 @@ import (
   "sync"
 
   "btrfs_to_glacier/util"
+  "btrfs_to_glacier/types"
 )
-
-// user.User type is not convenient because it uses strings instead of ints
-type User struct {
-  Name     string
-  Uid, Gid int
-}
 
 var (
   cap_sys_admin_mutex sync.Mutex
@@ -42,13 +37,18 @@ var (
 
   real_user_mutex sync.Mutex
   has_real_user bool
-  real_user User
-  NULL_USR  User
+  real_user types.User
+
+  root_user_mutex sync.Mutex
+  has_root_user bool
+  root_user types.User
+
+  NULL_USR  types.User
 )
 
 func init() {
   is_cap_sys_admin = C.is_cap_sys_admin() != 0
-  NULL_USR = User{ Name:"", Uid:-1, Gid:-1 }
+  NULL_USR = types.User{ Name:"", Uid:-1, Gid:-1 }
 }
 
 const ROOT_UID = 0
@@ -122,15 +122,20 @@ func (*SysUtilImpl) ProjectVersion() string {
   return C.BTRFS_TO_GLACIER_VERSION
 }
 
-func UserToUser(go_user *user.User) (User, error) {
+func UserToUser(go_user *user.User) (types.User, error) {
   uid, err := strconv.Atoi(go_user.Uid)
   if err != nil { return NULL_USR, err }
   gid, err := strconv.Atoi(go_user.Gid)
   if err != nil { return NULL_USR, err }
-  return User{ Name:go_user.Username, Uid:uid, Gid:gid, }, nil
+  return types.User{
+    Name:go_user.Username,
+    Uid:uid,
+    Gid:gid,
+    HomeDir:go_user.HomeDir,
+  }, nil
 }
 
-func (self *SysUtilImpl) GetRealUser() (User, error) {
+func (self *SysUtilImpl) GetRealUser() (types.User, error) {
   real_user_mutex.Lock()
   defer real_user_mutex.Unlock()
   if !has_real_user {
@@ -154,6 +159,20 @@ func (self *SysUtilImpl) GetRealUser() (User, error) {
   return real_user, nil
 }
 
+func (self *SysUtilImpl) GetRootUser() types.User {
+  root_user_mutex.Lock()
+  defer root_user_mutex.Unlock()
+  if !has_root_user {
+    root, err := user.LookupId("0")
+    if err != nil { util.Fatalf("user.LookupId: %v", err) }
+    root_user, err = UserToUser(root)
+    if err != nil { util.Fatalf("UserToUser: %v", err) }
+    //util.Debugf("root_user=%v", root_user)
+    has_root_user = true
+  }
+  return root_user
+}
+
 func (self *SysUtilImpl) DropRoot() (func(), error) {
   ru, err := self.GetRealUser()
   if err != nil { return nil, err }
@@ -167,6 +186,10 @@ func (self *SysUtilImpl) DropRoot() (func(), error) {
   expect_nest := cap_sys_admin_nesting
   is_cap_sys_admin = false
 
+  err = os.Setenv("HOME", ru.HomeDir)
+  //util.Debugf("HOME=%s", os.Getenv("HOME"))
+  if err != nil { return func() {}, nil }
+
   restore_f := func() {
     cap_sys_admin_mutex.Lock()
     defer cap_sys_admin_mutex.Unlock()
@@ -174,8 +197,17 @@ func (self *SysUtilImpl) DropRoot() (func(), error) {
     C.set_euid_or_die(ROOT_UID)
     cap_sys_admin_nesting -= 1
     is_cap_sys_admin = true
+
+    err = os.Setenv("HOME", self.GetRootUser().HomeDir)
+    if err != nil { util.Fatalf("os.SetEnv: %v", err) }
   }
   return restore_f, nil
+}
+
+func (self *SysUtilImpl) DropRootOrDie() func() {
+  restore_f, err := self.DropRoot()
+  if err != nil { util.Fatalf("DropRootOrDie: %v", err) }
+  return restore_f
 }
 
 func (self *SysUtilImpl) GetRoot() (func(), error) {
@@ -191,6 +223,9 @@ func (self *SysUtilImpl) GetRoot() (func(), error) {
   expect_nest := cap_sys_admin_nesting
   is_cap_sys_admin = true
 
+  err = os.Setenv("HOME", self.GetRootUser().HomeDir)
+  if err != nil { return func() {}, nil }
+
   restore_f := func() {
     cap_sys_admin_mutex.Lock()
     defer cap_sys_admin_mutex.Unlock()
@@ -198,6 +233,9 @@ func (self *SysUtilImpl) GetRoot() (func(), error) {
     C.set_euid_or_die((C.int)(ru.Uid))
     cap_sys_admin_nesting -= 1
     is_cap_sys_admin = false
+
+    err = os.Setenv("HOME", ru.HomeDir)
+    if err != nil { util.Fatalf("os.SetEnv: %v", err) }
   }
   return restore_f, nil
 }
@@ -208,7 +246,7 @@ func (self *SysUtilImpl) GetRootOrDie() func() {
   return drop_f
 }
 
-func (self *SysUtilImpl) Chown(path string, owner User) error {
+func (self *SysUtilImpl) Chown(path string, owner types.User) error {
   return os.Chown(path, owner.Uid, owner.Gid)
 }
 

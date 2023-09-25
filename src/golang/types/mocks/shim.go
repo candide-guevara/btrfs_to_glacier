@@ -48,10 +48,18 @@ func (self *Linuxutil) BtrfsProgsVersion() (uint32, uint32) {
 func (self *Linuxutil) ProjectVersion() string { return self.SysInfo.ToolGitCommit }
 func (self *Linuxutil) ChownAsRealUser(string) error { return self.ErrInject(self.ChownAsRealUser) }
 func (self *Linuxutil) DropRoot() (func(), error) { return func() {}, self.ErrInject(self.DropRoot) }
+func (self *Linuxutil) DropRootOrDie() func() {
+  if self.ErrInject(self.DropRootOrDie) != nil { util.Fatalf("mocks.Linuxutil.DropRootOrDie") }
+  return func() {}
+}
 func (self *Linuxutil) GetRoot() (func(), error) { return func() {}, self.ErrInject(self.GetRoot) }
 func (self *Linuxutil) GetRootOrDie() func() {
   if self.ErrInject(self.GetRootOrDie) != nil { util.Fatalf("mocks.Linuxutil.GetRootOrDie") }
   return func() {}
+}
+func (self *Linuxutil) GetRealUser() (types.User, error) {
+  user := types.User{}
+  return user, self.ErrInject(self.GetRealUser)
 }
 func (self *Linuxutil) ListBtrfsFilesystems() ([]*types.Filesystem, error) {
   return self.Filesystems, self.ErrInject(self.ListBtrfsFilesystems)

@@ -10,6 +10,7 @@ import (
   "btrfs_to_glacier/encryption"
   pb "btrfs_to_glacier/messages"
   "btrfs_to_glacier/util"
+  "btrfs_to_glacier/types"
 
   "github.com/aws/aws-sdk-go-v2/aws"
   "github.com/aws/aws-sdk-go-v2/service/s3"
@@ -26,7 +27,7 @@ func Backup(conf *pb.Config) *pb.Backup {
 // * `kProfile` exists in .aws/config as explained in `encryption.TestOnlyAwsConfFromCredsFile`
 //   * IAM user must have root permissions on the test buckets and dynamo tables.
 // * `kRegion` is a valid aws region were the test infrastructure is locate.
-func LoadAwsConfForExperimentalUser() (*pb.Config, *aws.Config) {
+func LoadAwsConfForExperimentalUser(linuxutil types.Linuxutil) (*pb.Config, *aws.Config) {
   const kProfile = "btrfs_experimental"
   const kRegion = "eu-central-1"
   const kMetaBucket = "s3.integration.test.meta"
@@ -37,7 +38,10 @@ func LoadAwsConfForExperimentalUser() (*pb.Config, *aws.Config) {
   Backup(conf).Aws.DynamoDb.MetadataTableName = kMetaDynTab
   Backup(conf).Aws.S3.StorageBucketName = kContentBucket
   Backup(conf).Aws.S3.MetadataBucketName = kMetaBucket
-  aws_conf, err := encryption.TestOnlyAwsConfFromCredsFile(context.Background(), conf, kProfile)
+  ru, err := linuxutil.GetRealUser()
+  if err != nil { util.Fatalf("TestOnlyAwsConfFromCredsFile: %v", err) }
+  aws_conf, err := encryption.TestOnlyAwsConfFromCredsFile(
+                     context.Background(), conf, ru.HomeDir, kProfile)
   if err != nil { util.Fatalf("TestOnlyAwsConfFromCredsFile: %v", err) }
   return conf, aws_conf
 }

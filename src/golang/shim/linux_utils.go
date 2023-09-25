@@ -29,14 +29,14 @@ const SYS_BLOCK = "/sys/block" // Block devices are presented like a tree. ex sd
 const MOUNT_INFO = "/proc/self/mountinfo"
 
 type SysUtilIf interface {
-  GetRealUser() (User, error)
+  GetRealUser() (types.User, error)
   ReadAsciiFile(string, string, bool) (string, error)
   ReadDir(string) ([]os.DirEntry, error)
   IsDir(string) bool
   Remove(string) error
   EvalSymlinks(string) (string, error)
   CombinedOutput(*exec.Cmd) ([]byte, error)
-  Chown(string, User) error
+  Chown(string, types.User) error
 
   // Part of public interface
   IsCapSysAdmin() bool
@@ -44,6 +44,7 @@ type SysUtilIf interface {
   BtrfsProgsVersion() (uint32, uint32)
   ProjectVersion() string
   DropRoot() (func(), error)
+  DropRootOrDie() func()
   GetRoot() (func(), error)
   GetRootOrDie() func()
 }

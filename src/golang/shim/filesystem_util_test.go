@@ -170,8 +170,8 @@ func (self *SysUtilForTest) Remove(p string) error {
   return self.Err
 }
 
-func (self *SysUtilForTest) GetRealUser() (User, error) {
-  return User{ Name:"testuser", Uid:1000, Gid:1000, }, self.Err
+func (self *SysUtilForTest) GetRealUser() (types.User, error) {
+  return types.User{ Name:"testuser", Uid:1000, Gid:1000, }, self.Err
 }
 
 func (self *SysUtilForTest) IsCapSysAdmin() bool { return false }
@@ -184,11 +184,13 @@ func (self *SysUtilForTest) ProjectVersion() string { return "" }
 
 func (self *SysUtilForTest) DropRoot() (func(), error) { return func() {}, self.Err }
 
+func (self *SysUtilForTest) DropRootOrDie() func() { return func() {} }
+
 func (self *SysUtilForTest) GetRoot() (func(), error) { return func() {}, self.Err }
 
 func (self *SysUtilForTest) GetRootOrDie() func() { return func() {} }
 
-func (self *SysUtilForTest) Chown(string, User) error { return self.Err }
+func (self *SysUtilForTest) Chown(string, types.User) error { return self.Err }
 
 
 func buildFilesystemUtil(t *testing.T) (*Linuxutil, *SysUtilForTest) {

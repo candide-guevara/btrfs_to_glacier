@@ -4,6 +4,7 @@ import (
   "context"
   "encoding/json"
   "fmt"
+  fpmod "path/filepath"
   "sync"
   "time"
 
@@ -191,16 +192,18 @@ func TestOnlyAwsConfFromPlainKey(
 }
 
 // Pre-requisite:
-// File `$HOME/.aws/config` should exist and contain `profile`. Example:
+// File `homedir/.aws/config` should exist and contain `profile`. Example:
 // [profile some_dude]
 // region = eu-central-1
 // output = json
 // credential_process = bash -c 'gpg --quiet --decrypt ~/.aws/some_dude.gpg'
 func TestOnlyAwsConfFromCredsFile(
-    ctx context.Context, conf *pb.Config, profile string) (*aws.Config, error) {
+    ctx context.Context, conf *pb.Config, homedir string, profile string) (*aws.Config, error) {
+  path := fpmod.Join(homedir, ".aws/config")
   cfg, err :=  config.LoadDefaultConfig(ctx,
                                         config.WithDefaultRegion(conf.Aws.Region),
-                                        config.WithSharedConfigProfile(profile))
+                                        config.WithSharedConfigProfile(profile),
+                                        config.WithSharedConfigFiles([]string{path}))
   return &cfg, err
 }
 
