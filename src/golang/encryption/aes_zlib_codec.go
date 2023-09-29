@@ -8,6 +8,7 @@ import (
   "crypto/rand"
   "crypto/sha512"
   "encoding/base64"
+  "errors"
   "fmt"
   "io"
   "strings"
@@ -19,6 +20,7 @@ import (
 )
 
 const AES_256_KEY_LEN = 32
+var ErrNoCurrentKey = errors.New("no_current_key_loaded")
 
 type FpKeyPair struct {
   Fp  types.PersistableString
@@ -95,6 +97,7 @@ func (self *AesZlibCodecGlobalState) LoadKeyring(
   hash_pw, err := pw_prompt()
   if err != nil { return null_key, null_fp, err }
   self.XorKey = hash_pw
+  if len(persisted_keys) == 0 { return null_key, null_fp, nil }
 
   for _,k := range persisted_keys {
     dec_key := decodeEncryptionKey(types.PersistableKey{k}, self.XorKey)
@@ -187,7 +190,9 @@ func TestOnlyDecodeEncryptionKey(enc_key types.PersistableKey) types.SecretKey {
 
 func encodeEncryptionKey(
     dec_key types.SecretKey, xor_key types.SecretKey) types.PersistableKey {
-  if len(dec_key.B) != len(xor_key.B) { util.Fatalf("Bad key length") }
+  if len(dec_key.B) != len(xor_key.B) {
+    util.Fatalf("Bad key length: %d / %d", len(dec_key.B), len(xor_key.B))
+  }
 
   enc_bytes := make([]byte, len(dec_key.B))
   for idx,b := range dec_key.B {
@@ -269,6 +274,7 @@ func (self *aesZlibCodec) OutputEncryptedKeyring(
 }
 
 func (self *aesZlibCodec) getStreamDecrypter(key_fp types.PersistableString) (cipher.Stream, error) {
+  if len(self.cur_key.B) == 0 { return nil, ErrNoCurrentKey }
   var stream cipher.Stream
   if len(key_fp.S) == 0 || key_fp.S == self.cur_fp.S {
     stream = AesStreamDecrypter(self.cur_key)
@@ -282,6 +288,7 @@ func (self *aesZlibCodec) getStreamDecrypter(key_fp types.PersistableString) (ci
 
 func (self *aesZlibCodec) EncryptStream(
     ctx context.Context, input types.ReadEndIf) (types.ReadEndIf, error) {
+  if len(self.cur_key.B) == 0 { return nil, ErrNoCurrentKey }
   pipe := util.NewInMemPipe(ctx)
   defer func() { util.OnlyCloseWriteEndWhenError(pipe, input.GetErr()) }()
   stream := AesStreamEncrypter(self.cur_key)

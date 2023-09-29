@@ -27,12 +27,12 @@ const key_ring_hash = "OUVARqpL8n713xcfRNVjh37w2LFfDVX/tcep/+Fs7ulbDyytajIepoNka
 var init_keys []string
 
 func buildTestCodec(t *testing.T) *aesZlibCodec {
-  TestOnlyResetGlobalKeyringState()
   init_keys = []string {persisted_key_1, persisted_key_2,}
   return buildTestCodecChooseEncKey(t, init_keys)
 }
 
 func buildTestCodecChooseEncKey(t *testing.T, keys []string) *aesZlibCodec {
+  TestOnlyResetGlobalKeyringState()
   conf := util.LoadTestConf()
   conf.Encryption.Keys = keys
   codec, err := NewCodecHelper(conf, TestOnlyFixedPw)
@@ -125,15 +125,101 @@ func TestPasswordTypo(t *testing.T) {
   if err == nil { t.Fatalf("Expect error because of wrong pw: %v", err) }
 }
 
+func QuickEncryptString(
+    t *testing.T, codec types.Codec, plain string) ([]byte, error) {
+  ctx,cancel := context.WithTimeout(context.Background(), util.TestTimeout)
+  defer cancel()
+
+  read_pipe := util.ReadEndFromBytes([]byte(plain))
+  encoded_pipe, err := codec.EncryptStream(ctx, read_pipe)
+  if err != nil { return nil, fmt.Errorf("QuickEncryptString: %v", err) }
+
+  done := make(chan []byte)
+  go func() {
+    defer close(done)
+    data, err := io.ReadAll(encoded_pipe)
+    if err != nil { t.Errorf("ReadAll: %v", err) }
+    done <- data
+  }()
+
+  select {
+    case data := <-done: return data, nil
+    case <-ctx.Done(): t.Fatalf("QuickEncryptString timeout")
+  }
+  return nil, fmt.Errorf("should never have reached this line")
+}
+
+func QuickDecryptString(
+    t *testing.T, codec types.Codec, obfus []byte) ([]byte, error) {
+  ctx,cancel := context.WithTimeout(context.Background(), util.TestTimeout)
+  defer cancel()
+
+  read_pipe := util.ReadEndFromBytes(obfus)
+  encoded_pipe, err := codec.DecryptStream(ctx, types.CurKeyFp, read_pipe)
+  if err != nil { return nil, fmt.Errorf("QuickDecryptString: %v", err) }
+
+  done := make(chan []byte)
+  go func() {
+    defer close(done)
+    data, err := io.ReadAll(encoded_pipe)
+    if err != nil { t.Errorf("ReadAll: %v", err) }
+    done <- data
+  }()
+
+  select {
+    case data := <-done: return data, nil
+    case <-ctx.Done(): t.Fatalf("QuickDecryptString timeout")
+  }
+  return nil, fmt.Errorf("should never have reached this line")
+}
+
 func TestCreateNewEncryptionKey(t *testing.T) {
+  expect_plain := "chocoloco plain text"
   codec := buildTestCodec(t)
   old_fp := codec.CurrentKeyFingerprint()
   old_key := codec.cur_key
   expect_key_count := len(init_keys) + 1
 
+  obfus1, err := QuickEncryptString(t, codec, expect_plain)
+  if err != nil { t.Fatalf("%v", err) }
+
   persisted, err := codec.CreateNewEncryptionKey()
   if err != nil { t.Fatalf("Could not create new key: %v", err) }
   if len(persisted.S) < 1 { t.Errorf("Bad persisted key") }
+
+  obfus2, err := QuickEncryptString(t, codec, expect_plain)
+  if err != nil { t.Fatalf("%v", err) }
+
+  if old_fp.S == codec.cur_fp.S || len(codec.cur_fp.S) < 1 {
+    t.Errorf("Bad new fingerprint")
+  }
+  if bytes.Compare(old_key.B, codec.cur_key.B) == 0 || len(codec.cur_key.B) < 1 {
+    t.Errorf("Bad new secret key")
+  }
+  util.EqualsOrFailTest(t, "Bad key count", TestOnlyKeyCount(), expect_key_count)
+
+  plain1,_ := QuickDecryptString(t, codec, obfus1)
+  plain2,_ := QuickDecryptString(t, codec, obfus2)
+  if bytes.Compare(plain1, []byte(expect_plain)) == 0 {
+    t.Errorf("Expected decryption with wrong key")
+  }
+  util.EqualsOrFailTest(t, "Bad decryption", string(plain2), expect_plain)
+}
+
+func TestCreateNewEncryptionKey_FromEmpty(t *testing.T) {
+  codec := buildTestCodecChooseEncKey(t, nil)
+  expect_key_count := 2
+
+  persisted1, err := codec.CreateNewEncryptionKey()
+  old_fp := codec.CurrentKeyFingerprint()
+  old_key := codec.cur_key
+  if err != nil { t.Fatalf("Could not create new key: %v", err) }
+  if len(persisted1.S) < 1 { t.Errorf("Bad persisted key") }
+
+  persisted2, err := codec.CreateNewEncryptionKey()
+  if err != nil { t.Fatalf("Could not create new key: %v", err) }
+  if len(persisted2.S) < 1 { t.Errorf("Bad persisted key") }
+
   if old_fp.S == codec.cur_fp.S || len(codec.cur_fp.S) < 1 {
     t.Errorf("Bad new fingerprint")
   }
@@ -143,58 +229,11 @@ func TestCreateNewEncryptionKey(t *testing.T) {
   util.EqualsOrFailTest(t, "Bad key count", TestOnlyKeyCount(), expect_key_count)
 }
 
-func QuickEncryptString(
-    t *testing.T, codec types.Codec, plain string) []byte {
-  ctx,cancel := context.WithTimeout(context.Background(), util.TestTimeout)
-  defer cancel()
-
-  read_pipe := util.ReadEndFromBytes([]byte(plain))
-  encoded_pipe, err := codec.EncryptStream(ctx, read_pipe)
-  if err != nil { t.Fatalf("Could not encrypt: %v", err) }
-
-  done := make(chan []byte)
-  go func() {
-    defer close(done)
-    data, err := io.ReadAll(encoded_pipe)
-    if err != nil { t.Errorf("ReadAll: %v", err) }
-    done <- data
-  }()
-
-  select {
-    case data := <-done: return data
-    case <-ctx.Done(): t.Fatalf("QuickEncryptString timeout")
-  }
-  return nil
-}
-
-func QuickDecryptString(
-    t *testing.T, codec types.Codec, obfus []byte) string {
-  ctx,cancel := context.WithTimeout(context.Background(), util.TestTimeout)
-  defer cancel()
-
-  read_pipe := util.ReadEndFromBytes(obfus)
-  encoded_pipe, err := codec.DecryptStream(ctx, types.CurKeyFp, read_pipe)
-  if err != nil { t.Fatalf("Could not decrypt: %v", err) }
-
-  done := make(chan []byte)
-  go func() {
-    defer close(done)
-    data, err := io.ReadAll(encoded_pipe)
-    if err != nil { t.Errorf("ReadAll: %v", err) }
-    done <- data
-  }()
-
-  select {
-    case data := <-done: return string(data)
-    case <-ctx.Done(): t.Fatalf("QuickDecryptString timeout")
-  }
-  return ""
-}
-
 func TestOutputEncryptedKeyring_Reload(t *testing.T) {
   expect_plain := "chocoloco plain text"
   codec := buildTestCodec(t)
-  obfus := QuickEncryptString(t, codec, expect_plain)
+  obfus, err := QuickEncryptString(t, codec, expect_plain)
+  if err != nil { t.Fatalf("%v", err) }
 
   persisted_keys, hash, err := codec.OutputEncryptedKeyring(TestOnlyAnotherPw)
   if err != nil { t.Fatalf("OutputEncryptedKeyring: %v", err) }
@@ -209,8 +248,8 @@ func TestOutputEncryptedKeyring_Reload(t *testing.T) {
   new_codec, err2 := NewCodecHelper(new_conf, TestOnlyAnotherPw)
   if err2 != nil { t.Fatalf("Could not create codec: %v", err2) }
 
-  plain := QuickDecryptString(t, new_codec, obfus)
-  util.EqualsOrFailTest(t, "Bad decryption", plain, expect_plain)
+  plain,_ := QuickDecryptString(t, new_codec, obfus)
+  util.EqualsOrFailTest(t, "Bad decryption", string(plain), expect_plain)
 }
 
 func TestSecretToPersistedKey(t *testing.T) {
@@ -651,5 +690,15 @@ func TestDecryptStreamLeaveSinkOpen_PrematurelyClosedInput(t *testing.T) {
 func TestDecryptStreamLeaveSinkOpen_WriteEndError(t *testing.T) {
   err_injector := func(p types.Pipe) { p.WriteEnd().SetErr(fmt.Errorf("inject_err")) }
   HelperDecryptStreamLeaveSinkOpen_ErrPropagation(t, err_injector)
+}
+
+func TestEncryptStream_FailIfNoKeys(t *testing.T) {
+  expect_plain := "chocoloco plain text"
+  codec := buildTestCodecChooseEncKey(t, nil)
+  _, err := QuickEncryptString(t, codec, expect_plain)
+  if err == nil { t.Fatalf("Encryption expected error for empty key: %v", err) }
+
+  _, err = QuickDecryptString(t, codec, []byte(expect_plain))
+  if err == nil { t.Fatalf("Decryption expected error for empty key: %v", err) }
 }
 
