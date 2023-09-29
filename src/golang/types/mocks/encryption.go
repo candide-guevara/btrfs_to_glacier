@@ -68,7 +68,8 @@ func (self *Codec) DecryptStreamLeaveSinkOpen(
   return err
 }
 
-func (self *Codec) ReEncryptKeyring(pw_prompt types.PwPromptF) ([]types.PersistableKey, error) {
-  return []types.PersistableKey{self.GenKeyPersistable}, nil
+func (self *Codec) OutputEncryptedKeyring(
+    pw_prompt types.PwPromptF) ([]types.PersistableKey, types.PersistableString, error) {
+  return []types.PersistableKey{self.GenKeyPersistable}, types.PersistableString{""}, nil
 }
 

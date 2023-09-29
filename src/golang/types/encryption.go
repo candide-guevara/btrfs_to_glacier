@@ -17,6 +17,7 @@ var CurKeyFp = PersistableString{""}
 // Returns the hashed content from a passphrase input by the user.
 type PwPromptF = func() (SecretKey, error)
 
+// Not thread-safe, `CreateNewEncryptionKey` may cause concurrent streams to be de/encrypted with different keys.
 type Keyring interface {
   // Generates a random encryption key of a suitable length for the encryption algo.
   // The new key is stored in the keyring so that subsequent encrypts will use that key.
@@ -24,10 +25,12 @@ type Keyring interface {
   CreateNewEncryptionKey() (PersistableKey, error)
   // Returns the fingerprint of the secret key used to encrypt.
   CurrentKeyFingerprint() PersistableString
-  // Re-encrypts all secret keys in the keyring with a new password.
-  // Any new key added will use the new password.
-  // The first key returned is the current encryption key used by the codec.
-  ReEncryptKeyring(pw_prompt PwPromptF) ([]PersistableKey, error)
+  // Encrypts all secret keys in the keyring with `pw_prompt`.
+  // Does NOT change any internal state to prevent mixing different passwords.
+  // Returns the re-encrypted keys in the keyword and the hash of all unencrypted keys.
+  // That hash can later be used to detect tampering and password typos.
+  // Respects the order of keys to keep the same current key.
+  OutputEncryptedKeyring(pw_prompt PwPromptF) ([]PersistableKey, PersistableString, error)
 }
 
 // Encryption is a double edge sword.

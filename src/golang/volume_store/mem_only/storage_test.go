@@ -54,6 +54,7 @@ func buildTestCodec(t *testing.T) types.Codec {
   conf := util.LoadTestConf()
   conf.Encryption.Keys = []string {persisted_key_1,}
 
+  encryption.TestOnlyResetGlobalKeyringState()
   codec, err := encryption.NewCodecHelper(conf, encryption.TestOnlyFixedPw)
   if err != nil { t.Fatalf("Could not create codec: %v", err) }
   return codec

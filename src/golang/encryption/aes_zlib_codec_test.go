@@ -5,6 +5,7 @@ import (
   "context"
   "fmt"
   "io"
+  "strings"
   "testing"
   "time"
   //pb "btrfs_to_glacier/messages"
@@ -21,10 +22,12 @@ const secret_key_1 = "\xb5\x3b\x53\xcd\x7b\x86\xff\xc1\x54\xb4\x44\x92\x07\x52\x
 const persisted_key_2 = "auMCZBaDihSsq0rN8loA/i4OBdWcxcsLSEeWbmD/mDI="
 const secret_key_2 = "\xe7\xf5\x4b\xe0\x45\x33\xb7\x50\x8c\x72\x49\xaf\x25\x44\x6c\xc8\x95\x1b\x61\x7b\x76\x96\x38\x64\x68\x20\xd0\x89\xab\xa5\xc9\x47"
 const fp_persisted_key_2 = "RWgSa2EIDmUr5FFExM7AgQ=="
+// cat <(dd if=/dev/random bs=32 count=1) <(echo -n secret_key | xxd -r -p) | sha512sum | cut -d' ' -f1 | xxd -r -p | base64 -w0
+const key_ring_hash = "OUVARqpL8n713xcfRNVjh37w2LFfDVX/tcep/+Fs7ulbDyytajIepoNkaljYndzTKp7qP9SR/bUKbqLHuOGEVw=="
 var init_keys []string
 
 func buildTestCodec(t *testing.T) *aesZlibCodec {
-  TestOnlyFlush()
+  TestOnlyResetGlobalKeyringState()
   init_keys = []string {persisted_key_1, persisted_key_2,}
   return buildTestCodecChooseEncKey(t, init_keys)
 }
@@ -40,35 +43,66 @@ func buildTestCodecChooseEncKey(t *testing.T, keys []string) *aesZlibCodec {
 func TestAesZlibCodecGlobalState_BuildKeyring(t *testing.T) {
   keys := []string {persisted_key_1, persisted_key_2,}
   state := NewAesZlibCodecGlobalState()
-  if err := state.DerivatePassphrase(false, TestOnlyFixedPw); err != nil {
-    t.Fatalf("state.DerivatePassphrase: %v", err)
+  if _, _, err := state.LoadKeyring(TestOnlyFixedPw, keys); err != nil {
+    t.Fatalf("state.LoadKeyring: %v", err)
   }
-  uniq_fp := make(map[string]bool)
   uniq_key := make(map[string]bool)
   expect_key_count := len(keys)
 
-  for _,k := range keys {
-    dec_key, fp := state.DecodeAndAddToKeyring(types.PersistableKey{k})
-    uniq_fp[fp.S] = true
-    uniq_key[string(dec_key.B)] = true
+  for _,pair := range state.Keyring {
+    uniq_key[string(pair.Key.B)] = true
   }
-  util.EqualsOrFailTest(t, "Bad uniq_fp", len(uniq_fp), expect_key_count)
+  util.EqualsOrFailTest(t, "Bad uniq_fp", len(state.Keyring), expect_key_count)
   util.EqualsOrFailTest(t, "Bad uniq_key", len(uniq_key), expect_key_count)
-  util.EqualsOrFailTest(t, "Bad keyring", len(state.Keyring), expect_key_count)
 }
 
-func TestAesZlibCodecGlobalState_BuildKeyring_Idempotent(t *testing.T) {
-  keys := []string {persisted_key_1, persisted_key_2, persisted_key_1, persisted_key_2, persisted_key_2,}
+func TestAesZlibCodecGlobalState_CalculateKeyringHash(t *testing.T) {
+  keys := []string {persisted_key_1, persisted_key_2,}
   state := NewAesZlibCodecGlobalState()
-  if err := state.DerivatePassphrase(false, TestOnlyFixedPw); err != nil {
-    t.Fatalf("state.DerivatePassphrase: %v", err)
+  if _, _, err := state.LoadKeyring(TestOnlyFixedPw, keys); err != nil {
+    t.Fatalf("state.LoadKeyring: %v", err)
   }
-  expect_key_count := 2
+  hash, err := state.CalculateKeyringHash()
+  if err != nil { t.Fatalf("state.CalculateKeyringHash: %v", err) }
+  util.EqualsOrFailTest(t, "Bad hash", hash.S, key_ring_hash)
+}
 
-  for _,k := range keys {
-    state.DecodeAndAddToKeyring(types.PersistableKey{k})
+func TestAesZlibCodecGlobalState_OutputEncryptedKeyring(t *testing.T) {
+  keys := []string {persisted_key_1, persisted_key_2,}
+  //secret_keys := []string {secret_key_1, secret_key_2,}
+
+  state := NewAesZlibCodecGlobalState()
+  if _, _, err := state.LoadKeyring(TestOnlyFixedPw, keys); err != nil {
+    t.Fatalf("state.LoadKeyring: %v", err)
   }
-  util.EqualsOrFailTest(t, "Bad keyring", len(state.Keyring), expect_key_count)
+
+  var unwrapped_keys []string
+  new_keys, hash, err := state.OutputEncryptedKeyring(TestOnlyAnotherPw)
+  if err != nil { t.Fatalf("state.OutputEncryptedKeyring: %v", err) }
+
+  util.EqualsOrFailTest(t, "Bad hash", hash.S, key_ring_hash)
+  util.EqualsOrFailTest(t, "Bad key len", len(new_keys), len(keys))
+  for idx,k := range keys {
+    if strings.Compare(k, new_keys[idx].S) == 0 {
+      t.Errorf("at %d persisted keys should be different", idx)
+    }
+    unwrapped_keys = append(unwrapped_keys, new_keys[idx].S)
+  }
+
+  new_state := NewAesZlibCodecGlobalState()
+  if _, _, err := new_state.LoadKeyring(TestOnlyAnotherPw, unwrapped_keys); err != nil {
+    t.Fatalf("state.LoadKeyring: %v", err)
+  }
+  for idx,pair := range new_state.Keyring {
+    if bytes.Compare(pair.Key.B, state.Keyring[idx].Key.B) != 0 {
+      t.Errorf("at %d secret keys should be the same", idx)
+    }
+    if strings.Compare(pair.Fp.S, state.Keyring[idx].Fp.S) != 0 {
+      t.Errorf("at %d fingerprints should be the same", idx)
+    }
+  }
+  new_hash, err := new_state.CalculateKeyringHash()
+  util.EqualsOrFailTest(t, "Bad new hash", new_hash.S, hash.S)
 }
 
 func TestCodecDefaultKey(t *testing.T) {
@@ -80,6 +114,15 @@ func TestCodecDefaultKey(t *testing.T) {
   if bytes.Compare(first_secret.B, codec.cur_key.B) != 0 {
     t.Errorf("Bad persisted key decoding: %x != %x", first_secret.B, secret_key_1)
   }
+}
+
+func TestPasswordTypo(t *testing.T) {
+  TestOnlyResetGlobalKeyringState()
+  conf := util.LoadTestConf()
+  conf.Encryption.Keys = []string{persisted_key_1, persisted_key_2,}
+  conf.Encryption.Hash = key_ring_hash
+  _, err := NewCodecHelper(conf, TestOnlyAnotherPw)
+  if err == nil { t.Fatalf("Expect error because of wrong pw: %v", err) }
 }
 
 func TestCreateNewEncryptionKey(t *testing.T) {
@@ -148,46 +191,21 @@ func QuickDecryptString(
   return ""
 }
 
-func TestReEncryptKeyring(t *testing.T) {
-  expect_plain := "chocoloco plain text"
-  codec := buildTestCodec(t)
-  obfus := QuickEncryptString(t, codec, expect_plain)
-  expect_key_count := len(init_keys)
-
-  persisted_keys, err := codec.ReEncryptKeyring(TestOnlyAnotherPw)
-  if err != nil { t.Fatalf("Could not re-encrypt: %v", err) }
-  if len(persisted_keys) != expect_key_count { t.Fatalf("Bad number of keys") }
-  util.EqualsOrFailTest(t, "Bad key count", TestOnlyKeyCount(), expect_key_count)
-
-  new_conf := util.LoadTestConf()
-  for _,k := range persisted_keys {
-    //t.Logf("Adding persisted key: %x", k.S)
-    new_conf.Encryption.Keys = append(new_conf.Encryption.Keys, k.S)
-    for _,old_k := range codec.conf.Encryption.Keys {
-      if old_k == k.S { t.Fatalf("Re-encrypted keys are the same: %v", k.S) }
-    }
-  }
-  new_codec, err2 := NewCodecHelper(new_conf, TestOnlyAnotherPw)
-  if err2 != nil { t.Fatalf("Could not create codec: %v", err2) }
-
-  plain := QuickDecryptString(t, new_codec, obfus)
-  util.EqualsOrFailTest(t, "Bad decryption", plain, expect_plain)
-}
-
-func TestReEncryptKeyring_WithFlush(t *testing.T) {
+func TestOutputEncryptedKeyring_Reload(t *testing.T) {
   expect_plain := "chocoloco plain text"
   codec := buildTestCodec(t)
   obfus := QuickEncryptString(t, codec, expect_plain)
 
-  persisted_keys, err := codec.ReEncryptKeyring(TestOnlyAnotherPw)
-  if err != nil { t.Fatalf("Could not re-encrypt: %v", err) }
+  persisted_keys, hash, err := codec.OutputEncryptedKeyring(TestOnlyAnotherPw)
+  if err != nil { t.Fatalf("OutputEncryptedKeyring: %v", err) }
 
   new_conf := util.LoadTestConf()
   for _,k := range persisted_keys {
     new_conf.Encryption.Keys = append(new_conf.Encryption.Keys, k.S)
   }
+  new_conf.Encryption.Hash = hash.S
 
-  TestOnlyFlush()
+  TestOnlyResetGlobalKeyringState()
   new_codec, err2 := NewCodecHelper(new_conf, TestOnlyAnotherPw)
   if err2 != nil { t.Fatalf("Could not create codec: %v", err2) }
 

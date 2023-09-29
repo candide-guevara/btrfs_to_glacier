@@ -1,6 +1,7 @@
 package encryption
 
 import (
+  "bytes"
   "context"
   "crypto/aes"
   "crypto/cipher"
@@ -9,6 +10,7 @@ import (
   "encoding/base64"
   "fmt"
   "io"
+  "strings"
   "sync"
 
   pb "btrfs_to_glacier/messages"
@@ -16,10 +18,17 @@ import (
   "btrfs_to_glacier/util"
 )
 
+const AES_256_KEY_LEN = 32
+
+type FpKeyPair struct {
+  Fp  types.PersistableString
+  Key types.SecretKey
+}
+
 // Keeps key material in global state to ask for passwords just once.
 type AesZlibCodecGlobalState struct {
   Mutex   *sync.Mutex
-  Keyring map[types.PersistableString]types.SecretKey
+  Keyring []FpKeyPair
   XorKey  types.SecretKey
 }
 var globalState AesZlibCodecGlobalState
@@ -27,7 +36,7 @@ var globalState AesZlibCodecGlobalState
 func NewAesZlibCodecGlobalState() *AesZlibCodecGlobalState {
   return &AesZlibCodecGlobalState{
     Mutex: new(sync.Mutex),
-    Keyring: make(map[types.PersistableString]types.SecretKey),
+    Keyring: make([]FpKeyPair, 0),
     XorKey: types.SecretKey{[]byte("")},
   }
 }
@@ -55,49 +64,96 @@ func NewCodecHelper(conf *pb.Config, pw_prompt types.PwPromptF) (types.Codec, er
     conf: conf,
     block_size: aes.BlockSize,
   }
-  if err := globalState.DerivatePassphrase(false, pw_prompt); err != nil { return nil, err }
-  if len(conf.Encryption.Keys) == 0 {
-    return nil, fmt.Errorf("No encryption keys in the configuration")
-  }
 
-  for idx,k := range conf.Encryption.Keys {
-    dec_key, fp := globalState.DecodeAndAddToKeyring(types.PersistableKey{k})
-    // Use the first key in the keyring to encrypt.
-    if idx == 0 {
-      codec.cur_fp = fp
-      codec.cur_key = dec_key
+  var err error
+  codec.cur_key, codec.cur_fp, err = globalState.LoadKeyring(pw_prompt, conf.Encryption.Keys)
+  if err != nil { return nil, err }
+
+  if len(conf.Encryption.Hash) != 0 {
+    if len(conf.Encryption.Keys) == 0 {
+      return nil, fmt.Errorf("No encryption keys in the configuration")
+    }
+    hash, err := globalState.CalculateKeyringHash()
+    if err != nil { return nil, err }
+    if strings.Compare(hash.S, conf.Encryption.Hash) != 0 {
+      return nil, fmt.Errorf("CompareKeyringToHash: '%s' != '%s'", hash.S, conf.Encryption.Hash)
     }
   }
   return codec, nil
 }
 
-func (self *AesZlibCodecGlobalState) DerivatePassphrase(
-    overwrite bool, pw_prompt types.PwPromptF) error {
+func (self *AesZlibCodecGlobalState) LoadKeyring(
+    pw_prompt types.PwPromptF, persisted_keys []string) (types.SecretKey, types.PersistableString, error) {
+  null_fp := types.PersistableString{""}
+  null_key := types.SecretKey{[]byte("")}
   self.Mutex.Lock()
   defer self.Mutex.Unlock()
-  if !overwrite && len(self.XorKey.B) != 0 { return nil }
+  if len(self.XorKey.B) != 0 {
+    return null_key, null_fp, fmt.Errorf("Cannot load twice to prevent mixing keys with different encryptions.")
+  }
 
   hash_pw, err := pw_prompt()
-  if err != nil { return err }
+  if err != nil { return null_key, null_fp, err }
   self.XorKey = hash_pw
-  return nil
+
+  for _,k := range persisted_keys {
+    dec_key := decodeEncryptionKey(types.PersistableKey{k}, self.XorKey)
+    fp := FingerprintKey(dec_key)
+    // Noop if key is already in globalState.Keyring
+    self.Keyring = append(self.Keyring, FpKeyPair{fp, dec_key})
+  }
+  // Use the first key in the keyring to encrypt.
+  return self.Keyring[0].Key, self.Keyring[0].Fp, nil
 }
 
-func (self *AesZlibCodecGlobalState) DecodeAndAddToKeyring(
-    enc_str types.PersistableKey) (types.SecretKey, types.PersistableString) {
+func (self *AesZlibCodecGlobalState) OutputEncryptedKeyring(
+    pw_prompt types.PwPromptF) ([]types.PersistableKey, types.PersistableString, error) {
+  null_hash := types.PersistableString{""}
+  if len(self.Keyring) == 0 {
+    return nil, null_hash, fmt.Errorf("OutputEncryptedKeyring: Keyring is empty")
+  }
+  xor_key, err := pw_prompt()
+  if err != nil { return nil, null_hash, err }
+
+  self.Mutex.Lock()
+  keys := make([]types.PersistableKey, 0, len(self.Keyring))
+  for _,pair := range self.Keyring {
+    enc_key := encodeEncryptionKey(pair.Key, xor_key)
+    keys = append(keys, enc_key)
+  }
+
+  self.Mutex.Unlock()
+  hash, err := self.CalculateKeyringHash()
+  return keys, hash, err
+}
+
+func (self *AesZlibCodecGlobalState) CalculateKeyringHash() (types.PersistableString, error) {
+  k_salt := []byte("\xf7\x47\x2b\x45\x4b\x1e\xf8\x45\xe6\x23\x67\xbd\xbf\x05\x1a\x0a\xd9\x7a\x6d\xa3\xd1\xa4\x8e\x52\x00\x62\x95\x0b\xa9\x92\x37\xcd")
+  null_hash := types.PersistableString{""}
   self.Mutex.Lock()
   defer self.Mutex.Unlock()
+  buf_len := AES_256_KEY_LEN * (len(self.Keyring) + 2)
+  backing := make([]byte, 0, buf_len)
+  buf := bytes.NewBuffer(backing)
 
-  dec_key := self.decodeEncryptionKey_MustHoldMutex(enc_str)
-  fp := FingerprintKey(dec_key)
-  // Noop if key is already in globalState.Keyring
-  self.Keyring[fp] = dec_key
-  return dec_key, fp
+  _, err := buf.Write(k_salt)
+  if err != nil { return null_hash, err }
+  for _,pair := range self.Keyring {
+    _, err := buf.Write(pair.Key.B)
+    if err != nil { return null_hash, err }
+  }
+  if buf.Cap() != buf_len {
+    return null_hash, fmt.Errorf("CalculateKeyringHash: bad buffer initial size")
+  }
+  raw_hash := sha512.Sum512(buf.Bytes())
+  copy(backing, make([]byte, buf_len)) //zero-out
+  str_hash := base64.StdEncoding.EncodeToString(raw_hash[:])
+  return types.PersistableString{str_hash}, nil
 }
 
 // Generates a fingerprint for the key that can safely be stored in a non-secure place.
 // The key should be impossible to deduce from the fingerprint.
-// The fingerprint **must** be issue from a `SecretKey` so that it is not dependent on the method used to encrypt the keys.
+// The fingerprint **must** be issued from a `SecretKey` so that it is not dependent on the method used to encrypt the keys.
 func FingerprintKey(key types.SecretKey) types.PersistableString {
   const fp_size = sha512.Size / 4
   if fp_size * 2 > len(key.B) {
@@ -109,35 +165,33 @@ func FingerprintKey(key types.SecretKey) types.PersistableString {
   return types.PersistableString{raw_fp}
 }
 
-func (self *AesZlibCodecGlobalState) decodeEncryptionKey_MustHoldMutex(
-    enc_key types.PersistableKey) types.SecretKey {
-  if locked := self.Mutex.TryLock(); locked { util.Fatalf("Must hold mutex when calling") }
+func decodeEncryptionKey(
+    enc_key types.PersistableKey, xor_key types.SecretKey) types.SecretKey {
 
   enc_bytes, err := base64.StdEncoding.DecodeString(enc_key.S)
   if err != nil { util.Fatalf("Bad key base64 encoding: %v", err) }
-  if len(enc_bytes) != len(self.XorKey.B) {
-    util.Fatalf("Bad key length: %d/%d", len(enc_key.S), len(self.XorKey.B))
+  if len(enc_bytes) != len(xor_key.B) {
+    util.Fatalf("Bad key length: %d/%d", len(enc_key.S), len(xor_key.B))
   }
   raw_key := make([]byte, len(enc_bytes))
   for idx,b := range enc_bytes {
-    raw_key[idx] = b ^ self.XorKey.B[idx]
+    raw_key[idx] = b ^ xor_key.B[idx]
   }
   return types.SecretKey{raw_key}
 }
 func TestOnlyDecodeEncryptionKey(enc_key types.PersistableKey) types.SecretKey {
   globalState.Mutex.Lock()
   defer globalState.Mutex.Unlock()
-  return globalState.decodeEncryptionKey_MustHoldMutex(enc_key)
+  return decodeEncryptionKey(enc_key, globalState.XorKey)
 }
 
-func (self *AesZlibCodecGlobalState) encodeEncryptionKey_MustHoldMutex(
-    dec_key types.SecretKey) types.PersistableKey {
-  if locked := self.Mutex.TryLock(); locked { util.Fatalf("Must hold mutex when calling") }
-  if len(dec_key.B) != len(self.XorKey.B) { util.Fatalf("Bad key length") }
+func encodeEncryptionKey(
+    dec_key types.SecretKey, xor_key types.SecretKey) types.PersistableKey {
+  if len(dec_key.B) != len(xor_key.B) { util.Fatalf("Bad key length") }
 
   enc_bytes := make([]byte, len(dec_key.B))
   for idx,b := range dec_key.B {
-    enc_bytes[idx] = b ^ self.XorKey.B[idx]
+    enc_bytes[idx] = b ^ xor_key.B[idx]
   }
   enc_str := base64.StdEncoding.EncodeToString(enc_bytes)
   return types.PersistableKey{enc_str}
@@ -145,7 +199,7 @@ func (self *AesZlibCodecGlobalState) encodeEncryptionKey_MustHoldMutex(
 func TestOnlyEncodeEncryptionKey(dec_key types.SecretKey) types.PersistableKey {
   globalState.Mutex.Lock()
   defer globalState.Mutex.Unlock()
-  return globalState.encodeEncryptionKey_MustHoldMutex(dec_key)
+  return encodeEncryptionKey(dec_key, globalState.XorKey)
 }
 
 func (self *AesZlibCodecGlobalState) AddToKeyringThenEncode(
@@ -153,25 +207,26 @@ func (self *AesZlibCodecGlobalState) AddToKeyringThenEncode(
   self.Mutex.Lock()
   defer self.Mutex.Unlock()
   fp := FingerprintKey(dec_key)
-  if _,found := self.Keyring[fp]; found {
-    null_fp := types.PersistableString{""}
-    null_key := types.PersistableKey{""}
-    return null_key, null_fp, fmt.Errorf("Fingerprint duplicated: '%s'", fp)
+  for _,pair := range self.Keyring {
+    if strings.Compare(fp.S, pair.Fp.S) == 0 {
+      null_fp := types.PersistableString{""}
+      null_key := types.PersistableKey{""}
+      return null_key, null_fp, fmt.Errorf("Fingerprint duplicated: '%s'", fp)
+    }
   }
-  enc_key := self.encodeEncryptionKey_MustHoldMutex(dec_key)
-  self.Keyring[fp] = dec_key
+  enc_key := encodeEncryptionKey(dec_key, self.XorKey)
+  self.Keyring = append(self.Keyring, FpKeyPair{fp,dec_key})
   return enc_key, fp, nil
 }
 
 func (self *AesZlibCodecGlobalState) Get(fp types.PersistableString) (types.SecretKey, error) {
   self.Mutex.Lock()
   defer self.Mutex.Unlock()
-  if dec_key,found := self.Keyring[fp]; !found {
-    null_key := types.SecretKey{[]byte("")}
-    return null_key, fmt.Errorf("Fingerprint not found: '%s'", fp)
-  } else {
-    return dec_key, nil
+  for _,pair := range self.Keyring {
+    if strings.Compare(fp.S, pair.Fp.S) == 0 { return pair.Key, nil }
   }
+  null_key := types.SecretKey{[]byte("")}
+  return null_key, fmt.Errorf("Fingerprint not found: '%s'", fp)
 }
 
 func TestOnlyKeyCount() int {
@@ -180,35 +235,16 @@ func TestOnlyKeyCount() int {
   return len(globalState.Keyring)
 }
 
-func TestOnlyFlush() {
+func TestOnlyResetGlobalKeyringState() {
   globalState.Mutex.Lock()
   defer globalState.Mutex.Unlock()
-  globalState.Keyring = make(map[types.PersistableString]types.SecretKey)
+  globalState.Keyring = make([]FpKeyPair, 0)
   globalState.XorKey = types.SecretKey{[]byte("")}
-}
-
-func (self *AesZlibCodecGlobalState) EncodeAllInKeyring(
-    first_fp types.PersistableString) ([]types.PersistableKey, error) {
-  self.Mutex.Lock()
-  defer self.Mutex.Unlock()
-  persisted_keys := make([]types.PersistableKey, 0, len(self.Keyring))
-
-  // Put the current encryption key first.
-  dec_key, found := self.Keyring[first_fp]
-  if !found { return nil, fmt.Errorf("keyring invalid state.") }
-  persisted_keys = append(persisted_keys, self.encodeEncryptionKey_MustHoldMutex(dec_key))
-
-  for fp,dec_key := range self.Keyring {
-    if fp.S == first_fp.S { continue }
-    persisted_keys = append(persisted_keys, self.encodeEncryptionKey_MustHoldMutex(dec_key))
-  }
-  return persisted_keys, nil
 }
 
 func (self *aesZlibCodec) EncryptionHeaderLen() int { return self.block_size }
 
 func (self *aesZlibCodec) CreateNewEncryptionKey() (types.PersistableKey, error) {
-  const AES_256_KEY_LEN = 32
   null_key := types.PersistableKey{""}
 
   raw_key := make([]byte, AES_256_KEY_LEN)
@@ -227,10 +263,9 @@ func (self *aesZlibCodec) CurrentKeyFingerprint() types.PersistableString {
   return self.cur_fp
 }
 
-func (self *aesZlibCodec) ReEncryptKeyring(
-    pw_prompt types.PwPromptF) ([]types.PersistableKey, error) {
-  if err := globalState.DerivatePassphrase(true, pw_prompt); err != nil { return nil, err }
-  return globalState.EncodeAllInKeyring(self.CurrentKeyFingerprint())
+func (self *aesZlibCodec) OutputEncryptedKeyring(
+    pw_prompt types.PwPromptF) ([]types.PersistableKey, types.PersistableString, error) {
+  return globalState.OutputEncryptedKeyring(pw_prompt)
 }
 
 func (self *aesZlibCodec) getStreamDecrypter(key_fp types.PersistableString) (cipher.Stream, error) {

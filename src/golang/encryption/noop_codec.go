@@ -67,8 +67,9 @@ func (self *NoopCodec) DecryptStreamLeaveSinkOpen(
   return err
 }
 
-func (self *NoopCodec) ReEncryptKeyring(pw_prompt types.PwPromptF) ([]types.PersistableKey, error) {
+func (self *NoopCodec) OutputEncryptedKeyring(
+    pw_prompt types.PwPromptF) ([]types.PersistableKey, types.PersistableString, error) {
   util.Fatalf("NoopCodec ReEncryptKeyring not supported")
-  return nil, nil
+  return nil, types.PersistableString{""}, nil
 }
 

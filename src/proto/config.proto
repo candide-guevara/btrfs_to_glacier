@@ -140,6 +140,10 @@ message Encryption {
   // Keys are stored symmetrically encrypted into the configuration.
   // The encryption keys will be stored encrypted in the configuration and they will go to github.
   repeated string keys = 2;
+  // Hash of the **unencrypted** keys.
+  // Needed to detect tampering of the encrypted keys.
+  // Also used to confirm a password can correctly decode the keys and avoid typo mistakes.
+  string hash = 3;
 }
 
 message Config {
