@@ -58,6 +58,12 @@ func (self Factory) BuildCodec() (types.Codec, error) {
   if self.Conf.Encryption.Type == pb.Encryption_AES_ZLIB {
     return encryption.NewCodec(self.Conf)
   }
+  if self.Conf.Encryption.Type == pb.Encryption_AES_ZLIB_FOR_TEST {
+    pw_prompt := func() (types.SecretKey, error) {
+      return encryption.BytesToXorKey([]byte("some_pw")), nil
+    }
+    return encryption.NewCodecHelper(self.Conf, pw_prompt)
+  }
   return nil, fmt.Errorf("%w bad encryption type", ErrBadConfig)
 }
 

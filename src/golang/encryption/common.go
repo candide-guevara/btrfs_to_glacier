@@ -28,8 +28,9 @@ func BuildPwPromt(mes string) types.PwPromptF {
     if len(byte_pass) < 12 { return null_key, fmt.Errorf("Password is too short") }
 
     err = util.IsOnlyAsciiString(byte_pass, false)
-    hash := sha256.Sum256(byte_pass)
-    hash_pw := types.SecretKey{hash[:]}
+    if err != nil { return null_key, err }
+
+    hash_pw := BytesToXorKey(byte_pass)
 
     // remove password from memory, not sure how reliable this is...
     for idx,_ := range byte_pass { byte_pass[idx] = 0 }
@@ -53,14 +54,17 @@ func GetSecretMaterialVerbatim(mes string) (types.SecretString, error) {
 func TestOnlyFixedPw() (types.SecretKey, error) {
   // xor_key=`sha256sum <(echo -n "chocolat") | cut -f1 -d' ' | sed -r 's/(..)/\\\\x\1/g'`
   const dummy_pw = "chocolat"
-  hash := sha256.Sum256([]byte(dummy_pw))
-  return types.SecretKey{hash[:]}, nil
+  return BytesToXorKey([]byte(dummy_pw)), nil
 }
 
 func TestOnlyAnotherPw() (types.SecretKey, error) {
   const dummy_pw = "mr_monkey"
-  hash := sha256.Sum256([]byte(dummy_pw))
-  return types.SecretKey{hash[:]}, nil
+  return BytesToXorKey([]byte(dummy_pw)), nil
+}
+
+func BytesToXorKey(pw []byte) types.SecretKey {
+  hash := sha256.Sum256(pw)
+  return types.SecretKey{hash[:]}
 }
 
 func NoCopyByteSliceToString(bytes []byte) string {

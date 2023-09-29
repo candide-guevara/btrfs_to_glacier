@@ -8,6 +8,7 @@ import (
   "os"
   "time"
 
+  "btrfs_to_glacier/encryption"
   "btrfs_to_glacier/factory"
   pb "btrfs_to_glacier/messages"
   "btrfs_to_glacier/types"
@@ -64,6 +65,17 @@ func CreateRootAndCanaryConf() (string, *pb.Config) {
   return root_path, conf
 }
 
+func CreateRootAndCanaryConf_WithEncryption() (string, *pb.Config) {
+  encryption.TestOnlyResetGlobalKeyringState()
+  root_path, conf := CreateRootAndCanaryConf()
+  conf.Encryption = &pb.Encryption{
+    Type: pb.Encryption_AES_ZLIB_FOR_TEST,
+    Keys: []string{ "FyCp61aaFPP4LFBcCET5t/LjFNgRbhOyy/nA5AiPi4c=", },
+    Hash: "s/K9/iqVtJUGO8c63vBm5RKURXd5RgM7lzSN6OukwiWV3pi6baA7NUTLKS/T9sUTdFYuPf06st3kTtEBZ5OZkg==",
+  }
+  return root_path, conf
+}
+
 func CreateAndRunCanary(ctx context.Context, conf *pb.Config) (types.BackupRestoreCanary, error) {
   builder, err := factory.NewFactory(conf)
   if err != nil { util.Fatalf("NewFactory: %v", err) }
@@ -90,6 +102,7 @@ func CreateAndRunCanary(ctx context.Context, conf *pb.Config) (types.BackupResto
 
 func InMem_NoEncryption(ctx context.Context) {
   util.Infof("RUN InMem_NoEncryption")
+  defer util.Infof("DONE InMem_NoEncryption")
   root_path, conf := CreateRootAndCanaryConf()
 
   canary_mgr, run_err := CreateAndRunCanary(ctx, conf)
@@ -101,7 +114,22 @@ func InMem_NoEncryption(ctx context.Context) {
   if run_err != nil || tear_err != nil {
     util.Fatalf("\nRun: %v\nTearDown: %v", run_err, tear_err)
   }
-  util.Infof("DONE InMem_NoEncryption")
+}
+
+func InMem_WithEncryption(ctx context.Context) {
+  util.Infof("RUN InMem_WithEncryption")
+  defer util.Infof("DONE InMem_WithEncryption")
+  root_path, conf := CreateRootAndCanaryConf_WithEncryption()
+
+  canary_mgr, run_err := CreateAndRunCanary(ctx, conf)
+  //util.Fatalf("boom: %v", run_err)
+  tear_err := canary_mgr.TearDown(ctx)
+
+  err := util.RemoveAll(root_path)
+  if err != nil { util.Warnf("Cannot remove loop device mount point: %v", err) }
+  if run_err != nil || tear_err != nil {
+    util.Fatalf("\nRun: %v\nTearDown: %v", run_err, tear_err)
+  }
 }
 
 func InMemMain() {
@@ -109,6 +137,7 @@ func InMemMain() {
 	defer cancel()
 
   InMem_NoEncryption(ctx)
+  InMem_WithEncryption(ctx)
   util.Infof("InMemMain ALL DONE")
 }
 
