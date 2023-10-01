@@ -27,7 +27,7 @@ func init() {
 
 // Thread safe implementation
 type RoundRobinSetup struct {
-  Sink        *pb.Backup_RoundRobin
+  Sinks       []*pb.Backup_Partition
   Conf        *pb.Config
   Linuxutil   types.Linuxutil
 }
@@ -35,24 +35,18 @@ type RoundRobinSetup struct {
 // Does not initialize inner SimpleDirMetadata because filesystem may not be mounted yet.
 func NewRoundRobinSetup(
     conf *pb.Config, lu types.Linuxutil, backup_name string) (*RoundRobinSetup, error) {
-  var sink *pb.Backup_RoundRobin
+  setup := &RoundRobinSetup{
+    Conf:  conf,
+    Linuxutil: lu,
+  }
   if b,err := util.BackupByName(conf, backup_name); err == nil {
-    if len(b.Fs.Sinks) != 1 { fmt.Errorf("Only supports backups with 1 sink: %s", backup_name) }
-    sink = b.Fs.Sinks[0]
+    setup.Sinks = append(setup.Sinks, b.Fs.Sinks...)
+    //util.PbInfof("b.Fs.Sinks: %s", b.Fs)
   } else {
     return nil, err
   }
-  if sink == nil {
-    return nil, fmt.Errorf("Sink '%s' not found", backup_name)
-  }
-  if len(sink.Partitions) < 1 {
+  if len(setup.Sinks) < 1 {
     return nil, fmt.Errorf("Sink '%s' does not contain any partition", backup_name)
-  }
-
-  setup := &RoundRobinSetup{
-    Sink:  sink,
-    Conf:  conf,
-    Linuxutil: lu,
   }
   return setup, nil
 }
@@ -60,7 +54,7 @@ func NewRoundRobinSetup(
 func (self *RoundRobinSetup) MountAllSinkPartitions(ctx context.Context) error {
   globalState.Mutex.Lock()
   defer globalState.Mutex.Unlock()
-  for _,part := range self.Sink.Partitions {
+  for _,part := range self.Sinks {
     if globalState.FsMounted[part.FsUuid] { continue }
     err := os.MkdirAll(part.MountRoot, 0755)
     if err != nil { return err }
@@ -78,7 +72,7 @@ func (self *RoundRobinSetup) MountAllSinkPartitions(ctx context.Context) error {
 func (self *RoundRobinSetup) UMountAllSinkPartitions(ctx context.Context) error {
   globalState.Mutex.Lock()
   defer globalState.Mutex.Unlock()
-  for _,part := range self.Sink.Partitions {
+  for _,part := range self.Sinks {
     if !globalState.FsMounted[part.FsUuid] { continue }
     err := self.Linuxutil.UMount(ctx, part.FsUuid)
     if err != nil { return err }
@@ -102,7 +96,7 @@ func (self *RoundRobinSetup) FindOldestPartition() (*pb.Backup_Partition, error)
   oldest_ts := time.Now()
   var oldest_part *pb.Backup_Partition = nil
 
-  for _,part := range self.Sink.Partitions {
+  for _,part := range self.Sinks {
     link := SymLink(part)
     finfo, err := os.Stat(link) // does follow symlinks
     if err != nil && !util.IsNotExist(err) { return nil, err }

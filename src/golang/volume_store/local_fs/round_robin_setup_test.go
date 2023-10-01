@@ -11,7 +11,7 @@ import (
 
 func buildTestRoundRobinSetupWithState(
     t *testing.T, state *pb.AllMetadata) (*RoundRobinSetup, *mocks.Linuxutil, func()) {
-  local_fs, clean_f := util.LoadTestMultiSinkBackupConf(1, 3, state != nil)
+  local_fs, clean_f := util.LoadTestMultiSinkBackupConf(3, state != nil)
   conf := util.LoadTestConfWithLocalFs(local_fs)
   PutStateInAllParts(local_fs, state)
   lu := mocks.NewLinuxutil()
@@ -25,7 +25,7 @@ func TestSetupMountAllSinkPartitions_Idempotent(t *testing.T) {
   defer cancel()
   setup,lu,clean_f := buildTestRoundRobinSetupWithState(t, &pb.AllMetadata{})
   defer clean_f()
-  expect_mounts := len(setup.Sink.Partitions)
+  expect_mounts := len(setup.Sinks)
 
   err := setup.MountAllSinkPartitions(ctx)
   if err != nil { t.Fatalf("MountAllSinkPartitions err: %v", err) }
@@ -41,7 +41,7 @@ func TestSetupUMountAllSinkPartitions_Idempotent(t *testing.T) {
   defer cancel()
   setup,lu,clean_f := buildTestRoundRobinSetupWithState(t, &pb.AllMetadata{})
   defer clean_f()
-  expect_umounts := len(setup.Sink.Partitions)
+  expect_umounts := len(setup.Sinks)
 
   err := setup.MountAllSinkPartitions(ctx)
   if err != nil { t.Fatalf("MountAllSinkPartitions err: %v", err) }

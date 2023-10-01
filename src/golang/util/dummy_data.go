@@ -207,40 +207,34 @@ func LoadTestConfWithLocalFs(local_fs *pb.Backup_Fs) *pb.Config {
 }
 
 func LoadTestMultiSinkBackupConf(
-    sink_cnt int, part_cnt int, create_dirs bool) (*pb.Backup_Fs, func()) {
-  local_fs := &pb.Backup_Fs{ Sinks: make([]*pb.Backup_RoundRobin, sink_cnt), }
+    sink_cnt int, create_dirs bool) (*pb.Backup_Fs, func()) {
+  local_fs := &pb.Backup_Fs{ Sinks: make([]*pb.Backup_Partition, sink_cnt), }
   for s_idx,_ := range local_fs.Sinks {
-    parts := make([]*pb.Backup_Partition, part_cnt)
-    for p_idx,_ := range parts {
-      local_fs_dir := fpmod.Join(os.TempDir(), uuid.NewString())
-      if create_dirs {
-        var err error
-        local_fs_dir, err = os.MkdirTemp(os.TempDir(), "localfs_")
-        if err != nil { Fatalf("failed to create tmp dir: %v", err) }
-        err = os.Mkdir(fpmod.Join(local_fs_dir, "metadata"), fs.ModePerm)
-        if err != nil { Fatalf("failed to create dir: %v", err) }
-        err = os.Mkdir(fpmod.Join(local_fs_dir, "storage"), fs.ModePerm)
-        if err != nil { Fatalf("failed to create dir: %v", err) }
-      }
-
-      parts[p_idx] = &pb.Backup_Partition{
-        FsUuid: uuid.NewString(),
-        MountRoot: local_fs_dir,
-        MetadataDir: "metadata",
-        StorageDir: "storage",
-      }
+    local_fs_dir := fpmod.Join(os.TempDir(), uuid.NewString())
+    if create_dirs {
+      var err error
+      local_fs_dir, err = os.MkdirTemp(os.TempDir(), "localfs_")
+      if err != nil { Fatalf("failed to create tmp dir: %v", err) }
+      err = os.Mkdir(fpmod.Join(local_fs_dir, "metadata"), fs.ModePerm)
+      if err != nil { Fatalf("failed to create dir: %v", err) }
+      err = os.Mkdir(fpmod.Join(local_fs_dir, "storage"), fs.ModePerm)
+      if err != nil { Fatalf("failed to create dir: %v", err) }
     }
-    local_fs.Sinks[s_idx] = &pb.Backup_RoundRobin{ Partitions: parts, }
+
+    local_fs.Sinks[s_idx] = &pb.Backup_Partition{
+      FsUuid: uuid.NewString(),
+      MountRoot: local_fs_dir,
+      MetadataDir: "metadata",
+      StorageDir: "storage",
+    }
   }
   clean_f := func () {
-    for _,g := range local_fs.Sinks {
-      for _,p := range g.Partitions { RemoveAll(p.MountRoot) }
-    }
+    for _,p := range local_fs.Sinks { RemoveAll(p.MountRoot) }
   }
   return proto.Clone(local_fs).(*pb.Backup_Fs), clean_f
 }
 
 func LoadTestSimpleDirBackupConf() (*pb.Backup_Fs, func()) {
-  return LoadTestMultiSinkBackupConf(1,1,true)
+  return LoadTestMultiSinkBackupConf(1,true)
 }
 

@@ -88,11 +88,12 @@ message Backup {
     string metadata_dir = 3;
     string storage_dir = 4;
   }
-  message RoundRobin {
-    repeated Partition partitions = 2;
-  }
+  // Note: I considered making Fs capable of backing up in several filesystems
+  //       but this is a hard problem in case of failures to keep them in sync.
   message Fs {
-    repeated RoundRobin sinks = 1;
+    // At startup only one sink should be chosen.
+    // Sink is chosen round robin based on last backup timestamp.
+    repeated Partition sinks = 1;
   }
 
   message DynamoDb {
@@ -111,9 +112,9 @@ message Backup {
   BackupType   type = 1;
   string       name = 2;
   // You can only have oneof the following.
+  // Did not use oneof because it is a pain to use in golang.
   Aws aws = 3;
   Fs  fs = 4;
-  // Did not use oneof because it is a pain to use in golang.
 }
 
 message Restore {

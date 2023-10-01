@@ -49,10 +49,8 @@ func BackupAwsByName(conf *pb.Config, name string) (*pb.Backup_Aws, error) {
 func BackupPartitionByUuid(conf *pb.Config, name string) (*pb.Backup_Partition, error) {
   for _,b := range conf.Backups {
     if b.Fs == nil { continue }
-    for _,rr := range b.Fs.Sinks {
-      for _,p := range rr.Partitions {
-        if p.FsUuid == name { return p, nil }
-      }
+    for _,p := range b.Fs.Sinks {
+      if p.FsUuid == name { return p, nil }
     }
   }
   return nil, fmt.Errorf("backup.partition %w %s", ErrNotFoundByName, name)

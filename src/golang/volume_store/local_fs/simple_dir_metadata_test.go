@@ -21,7 +21,7 @@ type SimpleDirRw struct {
 
 func PutStateInAllParts(local_fs *pb.Backup_Fs, state *pb.AllMetadata) {
   if state != nil {
-    for _,p := range local_fs.Sinks[0].Partitions {
+    for _,p := range local_fs.Sinks {
       writer := SimpleDirRw{p}
       if err := writer.PutState(state); err != nil { util.Fatalf("%v", err) }
     }
@@ -61,7 +61,7 @@ func (self *SimpleDirRw) GetState() *pb.AllMetadata {
 
 func buildTestSimpleDirMetadataWithConf(
     t *testing.T, conf *pb.Config) (*SimpleDirMetadata, *SimpleDirRw) {
-  part := conf.Backups[0].Fs.Sinks[0].Partitions[0]
+  part := conf.Backups[0].Fs.Sinks[0]
   client := &SimpleDirRw{part}
 
   in_mem, err := mem_only.NewInMemMetadata(conf)

@@ -13,7 +13,7 @@ import (
 
 func buildTestRoundRobinContentWithState(
     t *testing.T, state *pb.AllMetadata) (*RoundRobinContent, func()) {
-  local_fs, clean_f := util.LoadTestMultiSinkBackupConf(1, 3, state != nil)
+  local_fs, clean_f := util.LoadTestMultiSinkBackupConf(3, state != nil)
   conf := util.LoadTestConfWithLocalFs(local_fs)
   codec := new(mocks.Codec)
   codec.Fingerprint = types.PersistableString{"some_fp"}

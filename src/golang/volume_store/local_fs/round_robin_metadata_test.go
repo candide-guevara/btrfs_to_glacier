@@ -18,7 +18,7 @@ import (
 
 func buildTestRoundRobinMetadataWithState(
     t *testing.T, state *pb.AllMetadata) (*RoundRobinMetadata, func()) {
-  local_fs, clean_f := util.LoadTestMultiSinkBackupConf(1, 3, state != nil)
+  local_fs, clean_f := util.LoadTestMultiSinkBackupConf(3, state != nil)
   conf := util.LoadTestConfWithLocalFs(local_fs)
   PutStateInAllParts(local_fs, state)
   meta, err := NewRoundRobinMetadataAdmin(conf, mocks.NewLinuxutil(), conf.Backups[0].Name)
@@ -26,8 +26,8 @@ func buildTestRoundRobinMetadataWithState(
   return meta.(*RoundRobinMetadata), clean_f
 }
 
-func FirstSink(meta *RoundRobinMetadata) *pb.Backup_RoundRobin {
-  return meta.Conf.Backups[0].Fs.Sinks[0]
+func FirstFs(meta *RoundRobinMetadata) *pb.Backup_Fs {
+  return meta.Conf.Backups[0].Fs
 }
 
 func callSetupMetadataSync(t *testing.T, meta *RoundRobinMetadata) {
@@ -61,7 +61,7 @@ func checkStateAfterSetup(t *testing.T, meta *RoundRobinMetadata, expect_state *
   mount_map := make(map[string]bool)
   for _,m := range lu.Mounts { mount_map[m.Device.FsUuid] = true }
 
-  for _,p := range FirstSink(meta).Partitions {
+  for _,p := range FirstFs(meta).Sinks {
     if !util.IsDir(MetaDir(p)) { t.Errorf("!IsDir '%s'", MetaDir(p)) }
     if !mount_map[p.FsUuid] { t.Errorf("%s was not mounted", p.String()) }
     if p.FsUuid == meta.DirInfo.FsUuid {
@@ -79,7 +79,7 @@ func checkStateAfterSetup(t *testing.T, meta *RoundRobinMetadata, expect_state *
 func TestSetupRoundRobinMetadata_AllPartitionsNew(t *testing.T) {
   meta,clean_f := buildTestRoundRobinMetadataWithState(t, nil)
   defer clean_f()
-  for _,p := range FirstSink(meta).Partitions {
+  for _,p := range FirstFs(meta).Sinks {
     if util.IsDir(MetaDir(p)) { t.Errorf("IsDir '%s'", MetaDir(p)) }
   }
 
@@ -104,13 +104,13 @@ func TestSetupRoundRobinMetadata_OneNewPartition(t *testing.T) {
   _, state := util.DummyAllMetadata()
   meta,clean_f := buildTestRoundRobinMetadataWithState(t, state)
   defer clean_f()
-  sink := FirstSink(meta)
-  client := SimpleDirRw{ sink.Partitions[part_idx] }
+  fs := FirstFs(meta)
+  client := SimpleDirRw{ fs.Sinks[part_idx] }
   client.DeleteState(/*del_dir*/true)
 
   callSetupMetadataSync(t, meta)
   checkStateAfterSetup(t, meta, &pb.AllMetadata{})
-  util.EqualsOrFailTest(t, "Bad partition index", meta.DirInfo.FsUuid, sink.Partitions[part_idx].FsUuid)
+  util.EqualsOrFailTest(t, "Bad partition index", meta.DirInfo.FsUuid, fs.Sinks[part_idx].FsUuid)
 }
 
 func TestSetupRoundRobinMetadata_ExistingPartitions(t *testing.T) {
@@ -145,7 +145,7 @@ func TestSetupRoundRobinMetadata_ExistingPartitionsWithoutState(t *testing.T) {
   _, state := util.DummyAllMetadata()
   meta,clean_f := buildTestRoundRobinMetadataWithState(t, state)
   defer clean_f()
-  for _,p := range FirstSink(meta).Partitions {
+  for _,p := range FirstFs(meta).Sinks {
     client := SimpleDirRw{ p }
     client.DeleteState(/*del_dir*/false)
   }
@@ -249,7 +249,7 @@ func TestStorageReadWriteCycle(t *testing.T) {
 func TestReadWriteSaveCycle_ChangePartition(t *testing.T) {
   const part_cnt = 3
   vol_uuid, state := util.DummyAllMetadata()
-  local_fs, clean_f := util.LoadTestMultiSinkBackupConf(1, part_cnt, true)
+  local_fs, clean_f := util.LoadTestMultiSinkBackupConf(part_cnt, true)
   conf := util.LoadTestConfWithLocalFs(local_fs)
   PutStateInAllParts(local_fs, state)
   touched_fs := make(map[string]bool)
