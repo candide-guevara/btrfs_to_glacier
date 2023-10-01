@@ -2,6 +2,7 @@ package main
 
 import (
   "context"
+  "fmt"
   fsmod "io/fs"
   fpmod "path/filepath"
   "os"
@@ -144,7 +145,7 @@ func LocalFs_TearDown_OrDie(ctx context.Context,
 }
 
 func LocalFs_CreateCanary_OrDie(ctx context.Context,
-    conf *pb.Config, fs *types.Filesystem, linuxutil types.Linuxutil) (types.BackupRestoreCanary, types.CanaryToken) {
+    conf *pb.Config, fs *types.Filesystem, linuxutil types.Linuxutil) (types.Factory, types.BackupRestoreCanary, types.CanaryToken) {
   builder, err := factory.NewFactory(conf)
   if err != nil {
     fs_err := LocalFs_TearDownSinglePart(ctx, fs, linuxutil)
@@ -161,7 +162,7 @@ func LocalFs_CreateCanary_OrDie(ctx context.Context,
     LocalFs_TearDown_OrDie(ctx, conf, fs, canary_mgr, linuxutil)
     util.Fatalf("Canary Setup: %v", err)
   }
-  return canary_mgr, token
+  return builder, canary_mgr, token
 }
 
 func LocalFs_RunCanaryOnce_OrDie(
@@ -181,19 +182,39 @@ func LocalFs_RunCanaryOnce_OrDie(
 
 func LocalFs_NoEncryption(
     ctx context.Context, test_name string, linuxutil types.Linuxutil) {
+  const rounds = 5
   util.Infof("RUN %s", test_name)
   defer util.Infof("DONE %s", test_name)
   fs := LocalFs_SetupSingleExt4_OrDie(ctx, linuxutil)
   _, conf := LocalFs_CreateRootAndCanaryConf(fs)
 
-  canary_mgr, token := LocalFs_CreateCanary_OrDie(ctx, conf, fs, linuxutil)
+  builder, canary_mgr, token := LocalFs_CreateCanary_OrDie(ctx, conf, fs, linuxutil)
   clean_f := func() { LocalFs_TearDown_OrDie(ctx, conf, fs, canary_mgr, linuxutil) }
 
-  for i := 0; i < 5; i++ {
+  for i := 0; i < rounds; i++ {
     LocalFs_RunCanaryOnce_OrDie(ctx, canary_mgr, token, clean_f)
+  }
+  restore_mgr, err := builder.BuildRestoreManagerAdmin(ctx, conf.Workflows[0].Name)
+  if err == nil { err = restore_mgr.Setup(ctx) }
+  if err != nil {
+    clean_f()
+    util.Fatalf("BuildRestoreManagerAdmin: %v", err)
+  }
+  head_to_seq, err := restore_mgr.ReadHeadAndSequenceMap(ctx)
+  if err != nil {
+    clean_f()
+    util.Fatalf("ReadHeadAndSequenceMap: %v", err)
+  }
+  util.Debugf("HeadAndSequenceMap: %s", util.AsJson(head_to_seq))
+
+  if len(head_to_seq) != 1 { err = fmt.Errorf("Bad HeadAndSequenceMap len") }
+  for _,head_seq := range head_to_seq {
+    snap_uuids := head_seq.Cur.SnapUuids
+    if len(snap_uuids) != rounds + 1 { err = fmt.Errorf("Bad head_seq.Cur.SnapUuids len") }
   }
   // util.Fatalf("boom")
   clean_f()
+  if err != nil { util.Fatalf("%v", err) }
 }
 
 func LocalFsMain(linuxutil types.Linuxutil) {
