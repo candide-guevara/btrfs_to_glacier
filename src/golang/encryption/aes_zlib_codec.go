@@ -84,19 +84,24 @@ func NewCodecHelper(conf *pb.Config, pw_prompt types.PwPromptF) (types.Codec, er
   return codec, nil
 }
 
+// IMPORTANT: Will not ask for password twice.
+// If `LoadKeyring` is called for different configurations there is undefined behavior.
+// If `LoadKeyring` is called for the same configuration but keys have been added to the keyring there is undefined behavior.
 func (self *AesZlibCodecGlobalState) LoadKeyring(
     pw_prompt types.PwPromptF, persisted_keys []string) (types.SecretKey, types.PersistableString, error) {
   null_fp := types.PersistableString{""}
   null_key := types.SecretKey{[]byte("")}
   self.Mutex.Lock()
   defer self.Mutex.Unlock()
-  if len(self.XorKey.B) != 0 {
-    return null_key, null_fp, fmt.Errorf("Cannot load twice to prevent mixing keys with different encryptions.")
-  }
 
-  hash_pw, err := pw_prompt()
-  if err != nil { return null_key, null_fp, err }
-  self.XorKey = hash_pw
+  if len(self.XorKey.B) == 0 {
+    //return null_key, null_fp, fmt.Errorf("Cannot load twice to prevent mixing keys with different encryptions.")
+    hash_pw, err := pw_prompt()
+    if err != nil { return null_key, null_fp, err }
+    self.XorKey = hash_pw
+  } else if len(persisted_keys) != 0 {
+    return self.Keyring[0].Key, self.Keyring[0].Fp, nil
+  }
   if len(persisted_keys) == 0 { return null_key, null_fp, nil }
 
   for _,k := range persisted_keys {

@@ -23,7 +23,8 @@ const persisted_key_2 = "auMCZBaDihSsq0rN8loA/i4OBdWcxcsLSEeWbmD/mDI="
 const secret_key_2 = "\xe7\xf5\x4b\xe0\x45\x33\xb7\x50\x8c\x72\x49\xaf\x25\x44\x6c\xc8\x95\x1b\x61\x7b\x76\x96\x38\x64\x68\x20\xd0\x89\xab\xa5\xc9\x47"
 const fp_persisted_key_2 = "RWgSa2EIDmUr5FFExM7AgQ=="
 // cat <(dd if=/dev/random bs=32 count=1) <(echo -n secret_key | xxd -r -p) | sha512sum | cut -d' ' -f1 | xxd -r -p | base64 -w0
-const key_ring_hash = "OUVARqpL8n713xcfRNVjh37w2LFfDVX/tcep/+Fs7ulbDyytajIepoNkaljYndzTKp7qP9SR/bUKbqLHuOGEVw=="
+const keyring_hash_1key  = "Wi2mJKi43luJgGn/dAxDAYbJrifsb9jdJdvd+r2MEKQoOPxcLnRXWnZSPC2mQQEC73cNeV7YDD+NI48O8T8dtw=="
+const keyring_hash_2keys = "OUVARqpL8n713xcfRNVjh37w2LFfDVX/tcep/+Fs7ulbDyytajIepoNkaljYndzTKp7qP9SR/bUKbqLHuOGEVw=="
 var init_keys []string
 
 func buildTestCodec(t *testing.T) *aesZlibCodec {
@@ -64,7 +65,7 @@ func TestAesZlibCodecGlobalState_CalculateKeyringHash(t *testing.T) {
   }
   hash, err := state.CalculateKeyringHash()
   if err != nil { t.Fatalf("state.CalculateKeyringHash: %v", err) }
-  util.EqualsOrFailTest(t, "Bad hash", hash.S, key_ring_hash)
+  util.EqualsOrFailTest(t, "Bad hash", hash.S, keyring_hash_2keys)
 }
 
 func TestAesZlibCodecGlobalState_OutputEncryptedKeyring(t *testing.T) {
@@ -80,7 +81,7 @@ func TestAesZlibCodecGlobalState_OutputEncryptedKeyring(t *testing.T) {
   new_keys, hash, err := state.OutputEncryptedKeyring(TestOnlyAnotherPw)
   if err != nil { t.Fatalf("state.OutputEncryptedKeyring: %v", err) }
 
-  util.EqualsOrFailTest(t, "Bad hash", hash.S, key_ring_hash)
+  util.EqualsOrFailTest(t, "Bad hash", hash.S, keyring_hash_2keys)
   util.EqualsOrFailTest(t, "Bad key len", len(new_keys), len(keys))
   for idx,k := range keys {
     if strings.Compare(k, new_keys[idx].S) == 0 {
@@ -120,7 +121,7 @@ func TestPasswordTypo(t *testing.T) {
   TestOnlyResetGlobalKeyringState()
   conf := util.LoadTestConf()
   conf.Encryption.Keys = []string{persisted_key_1, persisted_key_2,}
-  conf.Encryption.Hash = key_ring_hash
+  conf.Encryption.Hash = keyring_hash_2keys
   _, err := NewCodecHelper(conf, TestOnlyAnotherPw)
   if err == nil { t.Fatalf("Expect error because of wrong pw: %v", err) }
 }
@@ -171,6 +172,54 @@ func QuickDecryptString(
     case <-ctx.Done(): t.Fatalf("QuickDecryptString timeout")
   }
   return nil, fmt.Errorf("should never have reached this line")
+}
+
+func TestCodec_LoadTwiceOk(t *testing.T) {
+  TestOnlyResetGlobalKeyringState()
+  expect_plain := "chocoloco plain text"
+  conf := util.LoadTestConf()
+  conf.Encryption.Keys = []string{persisted_key_1, persisted_key_2,}
+  conf.Encryption.Hash = keyring_hash_2keys
+
+  codec, err := NewCodecHelper(conf, TestOnlyFixedPw)
+  if err != nil { t.Fatalf("Could not create codec: %v", err) }
+  obfus, err := QuickEncryptString(t, codec, expect_plain)
+  if err != nil { t.Fatalf("%v", err) }
+
+  new_codec, err := NewCodecHelper(conf, TestOnlyFixedPw)
+  if err != nil { t.Fatalf("Could not create codec: %v", err) }
+  plain,_ := QuickDecryptString(t, new_codec, obfus)
+  util.EqualsOrFailTest(t, "Bad decryption", string(plain), expect_plain)
+}
+
+func TestCodec_LoadTwiceWithConfChange(t *testing.T) {
+  TestOnlyResetGlobalKeyringState()
+  conf := util.LoadTestConf()
+  conf.Encryption.Keys = []string{persisted_key_1,}
+  conf.Encryption.Hash = keyring_hash_1key
+
+  _, err := NewCodecHelper(conf, TestOnlyFixedPw)
+  if err != nil { t.Fatalf("Could not create codec: %v", err) }
+
+  conf.Encryption.Keys = []string{persisted_key_1, persisted_key_2,}
+  conf.Encryption.Hash = keyring_hash_2keys
+  _, err = NewCodecHelper(conf, TestOnlyFixedPw)
+  if err == nil { t.Fatalf("Expect could not create codec: %v", err) }
+}
+
+func TestCodec_LoadTwiceWithKeyAddition(t *testing.T) {
+  TestOnlyResetGlobalKeyringState()
+  conf := util.LoadTestConf()
+  conf.Encryption.Keys = []string{persisted_key_1, persisted_key_2,}
+  conf.Encryption.Hash = keyring_hash_2keys
+
+  codec, err := NewCodecHelper(conf, TestOnlyFixedPw)
+  if err != nil { t.Fatalf("Could not create codec: %v", err) }
+  _, err = codec.CreateNewEncryptionKey()
+  if err != nil { t.Fatalf("codec.CreateNewEncryptionKey: %v", err) }
+
+  _, err = NewCodecHelper(conf, TestOnlyFixedPw)
+  if err == nil { t.Fatalf("Expect could not create codec: %v", err) }
 }
 
 func TestCreateNewEncryptionKey(t *testing.T) {
