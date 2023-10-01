@@ -118,6 +118,16 @@ func (self *Linuxutil) CreateBtrfsFilesystem(
   self.Filesystems = append(self.Filesystems, fs)
   return fs, self.ErrInject(self.CreateBtrfsFilesystem)
 }
+func (self *Linuxutil) CreateExt4Filesystem(
+    ctx context.Context, dev *types.Device, label string, opts ...string) (*types.Filesystem, error) {
+  fs := &types.Filesystem{
+    Uuid: uuid.NewString(),
+    Label: uuid.NewString(),
+    Devices: []*types.Device{ dev },
+  }
+  self.Filesystems = append(self.Filesystems, fs)
+  return fs, self.ErrInject(self.CreateExt4Filesystem)
+}
 func (self *Linuxutil) CleanMountDirs() {
   for _,m := range self.Mounts { util.RemoveAll(m.MountedPath) }
   for _,m := range self.UMounts { util.RemoveAll(m.MountedPath) }

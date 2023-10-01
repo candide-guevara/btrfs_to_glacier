@@ -101,10 +101,11 @@ type Linuxutil interface {
   // Deletes loop device and backing file.
   // Requires CAP_SYS_ADMIN.
   DeleteLoopDevice(context.Context, *Device) error
-  // Creates a btrfs filesystem on the device.
+  // Creates a filesystem on the device.
   // This method should only return once the filesystem is visible.
   // Requires CAP_SYS_ADMIN.
   CreateBtrfsFilesystem(context.Context, *Device, string, ...string) (*Filesystem, error)
+  CreateExt4Filesystem(context.Context, *Device, string, ...string) (*Filesystem, error)
 }
 
 // Implementations must be thread-safe.

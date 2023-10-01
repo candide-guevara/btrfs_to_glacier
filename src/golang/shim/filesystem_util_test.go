@@ -623,20 +623,42 @@ func TestDeleteLoopDevice(t *testing.T) {
 func TestCreateBtrfsFilesystem(t *testing.T) {
   lu,sys_util := buildFilesystemUtil(t)
   var expected_fs *types.Filesystem
+  dev := &types.Device{ Name: "sda1", }
+  label := "TestCreateBtrfsFilesystem_Label"
   sys_util.RunOnCmd = func(cmd *exec.Cmd) {
     args_rx := regexp.MustCompile("--uuid.([^ ]+)")
     match := args_rx.FindStringSubmatch(strings.Join(cmd.Args, " "))
     if match == nil { return }
-    expected_fs = sys_util.AddBtrfsFilesystem(match[1], "sda1", "/mnt")
+    expected_fs = sys_util.AddBtrfsFilesystem(match[1], dev.Name, "/mnt")
     sys_util.CmdOutput["mkfs.btrfs"] = ""
   }
-  dev := &types.Device{ Name: "sda1", }
-  fs, err := lu.CreateBtrfsFilesystem(context.TODO(), dev, "label")
+
+  fs, err := lu.CreateBtrfsFilesystem(context.TODO(), dev, label)
   if err != nil { t.Fatalf("CreateBtrfsFilesystem err: %v", err) }
-  expected_fs.Label = "label"
+
+  expected_fs.Label = label
   expected_fs.Mounts = nil
-  expected_fs.Devices = nil
-  fs.Devices = nil
+  util.EqualsOrFailTest(t, "Bad filesystem", fs, expected_fs)
+}
+
+func TestCreateExt4Filesystem(t *testing.T) {
+  lu,sys_util := buildFilesystemUtil(t)
+  var expected_fs *types.Filesystem
+  dev := &types.Device{ Name: "sda1", }
+  label := "TestCreateExt4Filesystem_Label"
+  sys_util.RunOnCmd = func(cmd *exec.Cmd) {
+    args_rx := regexp.MustCompile("-U.([^ ]+)")
+    match := args_rx.FindStringSubmatch(strings.Join(cmd.Args, " "))
+    if match == nil { return }
+    expected_fs = sys_util.AddBtrfsFilesystem(match[1], dev.Name, "/mnt")
+    sys_util.CmdOutput["mkfs.ext4"] = ""
+  }
+
+  fs, err := lu.CreateExt4Filesystem(context.TODO(), dev, label)
+  if err != nil { t.Fatalf("CreateExt4Filesystem err: %v", err) }
+
+  expected_fs.Label = label
+  expected_fs.Mounts = nil
   util.EqualsOrFailTest(t, "Bad filesystem", fs, expected_fs)
 }
 

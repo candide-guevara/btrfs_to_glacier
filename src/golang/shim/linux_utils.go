@@ -545,16 +545,25 @@ func (self *Linuxutil) btrfsFilesystemsMatching(
   return fs_list, nil
 }
 
-func (self *Linuxutil) CreateBtrfsFilesystem(
-    ctx context.Context, dev *types.Device, label string, opts ...string) (*types.Filesystem, error) {
+func (self *Linuxutil) CreateFilesystem_Helper(
+    ctx context.Context, fs_type string, dev *types.Device, label string, opts []string) (*types.Filesystem, error) {
+  type CmdFlagsT struct { Cmd, Uuid, Label string }
+  cmd_map := map[string]CmdFlagsT {
+    "btrfs": CmdFlagsT{ "mkfs.btrfs", "--uuid", "--label", },
+    "ext4":  CmdFlagsT{ "mkfs.ext4",  "-U",     "-L", },
+  }
+  cmd_flags, found := cmd_map[fs_type]
+  if !found { return nil, fmt.Errorf("Invalid fs type: %s", fs_type) }
+
+  fs_uuid := uuid.NewString()
+  all_opts := []string{ cmd_flags.Uuid, fs_uuid, cmd_flags.Label, label, }
+  all_opts = append(all_opts, opts...)
+  all_opts = append(all_opts, fpmod.Join("/dev", dev.Name))
+
   self.mutex.Lock()
   defer self.mutex.Unlock()
 
-  fs_uuid := uuid.NewString()
-  all_opts := []string{ "--uuid", fs_uuid, "--label", label, }
-  all_opts = append(all_opts, opts...)
-  all_opts = append(all_opts, fpmod.Join("/dev", dev.Name))
-  cmd := exec.CommandContext(ctx, "mkfs.btrfs", all_opts...)
+  cmd := exec.CommandContext(ctx, cmd_flags.Cmd, all_opts...)
   if _, err := self.SysUtilIf.CombinedOutput(cmd); err != nil { return nil, err }
 
   dev_rx := regexp.MustCompile(fmt.Sprintf("^%s$", dev.Name))
@@ -563,7 +572,7 @@ func (self *Linuxutil) CreateBtrfsFilesystem(
     if err != nil { return nil, err }
     for _,d := range devs {
       if d.FsUuid != fs_uuid { continue }
-      util.Infof("New btrfs filesystem: %v", fs_uuid)
+      util.Infof("New filesystem: %v", fs_uuid)
       fs := &types.Filesystem{
         Uuid: fs_uuid,
         Label: label,
@@ -574,6 +583,16 @@ func (self *Linuxutil) CreateBtrfsFilesystem(
     time.Sleep(util.MedTimeout)
   }
   return nil, fmt.Errorf("Timedout waiting for '%s'", fs_uuid)
+}
+
+func (self *Linuxutil) CreateBtrfsFilesystem(
+    ctx context.Context, dev *types.Device, label string, opts ...string) (*types.Filesystem, error) {
+  return self.CreateFilesystem_Helper(ctx, "btrfs", dev, label, opts)
+}
+
+func (self *Linuxutil) CreateExt4Filesystem(
+    ctx context.Context, dev *types.Device, label string, opts ...string) (*types.Filesystem, error) {
+  return self.CreateFilesystem_Helper(ctx, "ext4", dev, label, opts)
 }
 
 func (self *Linuxutil) ListBtrfsFilesystems() ([]*types.Filesystem, error) {
