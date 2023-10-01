@@ -314,7 +314,7 @@ func (self *Linuxutil) Mount(
   if err_mnt != nil {
     fstab_msg := fmt.Sprintf("You may need to configure /etc/fstab, example:\nUUID=%s %s auto noauto,user,noatime,nodiratime,noexec 0 2",
                              fs_uuid, target)
-    return nil, fmt.Errorf("failed to mount: %w\n%s", err_mnt, fstab_msg)
+    return nil, fmt.Errorf("failed to mount %s: %w\n%s", fs_uuid, err_mnt, fstab_msg)
   }
 
   for range make([]int, 50) {
@@ -334,7 +334,6 @@ func (self *Linuxutil) UMount(ctx context.Context, fs_uuid string) error {
   defer self.mutex.Unlock()
 
   cmd := exec.CommandContext(ctx, "umount", fmt.Sprintf("UUID=%s", fs_uuid))
-  util.Debugf("Running: %s", cmd.String())
   _, err_mnt := self.SysUtilIf.CombinedOutput(cmd)
 
   mnt_list, err := self.ListBlockDevMounts()

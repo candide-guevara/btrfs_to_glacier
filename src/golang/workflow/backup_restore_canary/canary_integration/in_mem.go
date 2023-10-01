@@ -3,9 +3,7 @@ package main
 import (
   "context"
   "fmt"
-  "io/fs"
   fpmod "path/filepath"
-  "os"
   "time"
 
   "btrfs_to_glacier/encryption"
@@ -19,9 +17,6 @@ import (
 
 func InMem_CreateRootAndCanaryConf() (string, *pb.Config) {
   root_path := fpmod.Join("/tmp", uuid.NewString())
-  err := os.Mkdir(root_path, fs.ModePerm)
-  if err != nil { util.Fatalf("Cannot create loop device mount point: %v", err) }
-
   source := &pb.Source{
     Type: pb.Source_BTRFS,
     Name: uuid.NewString(),

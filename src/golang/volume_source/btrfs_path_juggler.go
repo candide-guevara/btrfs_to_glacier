@@ -24,7 +24,7 @@ type BtrfsPathJuggler struct {
 }
 
 // This implementation considers the filesystems and mounts are constant through
-// the program execution.
+// this object lifetime.
 func NewBtrfsPathJuggler(
     conf *pb.Config, btrfsutil types.Btrfsutil, linuxutil types.Linuxutil) (types.BtrfsPathJuggler, error) {
   filesys, err := linuxutil.ListBtrfsFilesystems()

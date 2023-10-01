@@ -66,6 +66,8 @@ func (self *RoundRobinSetup) MountAllSinkPartitions(ctx context.Context) error {
     if err != nil { return err }
     globalState.FsMounted[part.FsUuid] = true
   }
+  //util.Debugf("MountAllSinkPartitions globalState.FsMounted:\n%v",
+  //            util.AsJson(globalState.FsMounted))
   return nil
 }
 
@@ -78,6 +80,8 @@ func (self *RoundRobinSetup) UMountAllSinkPartitions(ctx context.Context) error 
     if err != nil { return err }
     globalState.FsMounted[part.FsUuid] = false
   }
+  //util.Debugf("UMountAllSinkPartitions globalState.FsMounted:\n%v",
+  //            util.AsJson(globalState.FsMounted))
   return nil
 }
 

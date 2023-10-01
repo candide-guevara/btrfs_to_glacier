@@ -4,6 +4,7 @@ import (
   "context"
   "errors"
   "fmt"
+  fsmod "io/fs"
   "os"
   fpmod "path/filepath"
   "strings"
@@ -108,6 +109,11 @@ func (self *BackupRestoreCanary) Setup(ctx context.Context) (types.CanaryToken, 
     util.Infof("Setup twice is a noop: %s", self.State.Uuid)
     return nil, nil
   }
+
+  // Create loop device mount dir if needed as user before getting root
+  err := os.Mkdir(self.FsRoot(), fsmod.ModePerm)
+  if err != nil { return nil, err }
+
   drop_f := self.Lnxutil.GetRootOrDie()
   defer drop_f()
   dev, err := self.Lnxutil.CreateLoopDevice(ctx, LoopDevSizeMb)
