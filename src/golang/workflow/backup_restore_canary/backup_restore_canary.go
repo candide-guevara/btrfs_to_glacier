@@ -148,6 +148,10 @@ func (self *BackupRestoreCanary) Setup(ctx context.Context) (types.CanaryToken, 
     if err != nil { return nil, err }
     err = self.CreateFirstValidationChainItem()
     if err != nil { return nil, err }
+
+    get_root, err := self.Lnxutil.DropRoot()
+    if err != nil { return nil, err }
+    defer get_root()
     _, err = self.State.BackupMgr.BackupAllToCurrentSequences(ctx, []*pb.SubVolume{sv,})
     if err != nil { return nil, err }
     self.State.Uuid, err = self.DetermineVolUuid(ctx)
