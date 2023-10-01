@@ -17,7 +17,7 @@ import (
   "github.com/google/uuid"
 )
 
-func CreateRootAndCanaryConf() (string, *pb.Config) {
+func InMem_CreateRootAndCanaryConf() (string, *pb.Config) {
   root_path := fpmod.Join("/tmp", uuid.NewString())
   err := os.Mkdir(root_path, fs.ModePerm)
   if err != nil { util.Fatalf("Cannot create loop device mount point: %v", err) }
@@ -65,9 +65,9 @@ func CreateRootAndCanaryConf() (string, *pb.Config) {
   return root_path, conf
 }
 
-func CreateRootAndCanaryConf_WithEncryption() (string, *pb.Config) {
+func InMem_CreateRootAndCanaryConf_WithEncryption() (string, *pb.Config) {
   encryption.TestOnlyResetGlobalKeyringState()
-  root_path, conf := CreateRootAndCanaryConf()
+  root_path, conf := InMem_CreateRootAndCanaryConf()
   conf.Encryption = &pb.Encryption{
     Type: pb.Encryption_AES_ZLIB_FOR_TEST,
     Keys: []string{ "FyCp61aaFPP4LFBcCET5t/LjFNgRbhOyy/nA5AiPi4c=", },
@@ -76,7 +76,7 @@ func CreateRootAndCanaryConf_WithEncryption() (string, *pb.Config) {
   return root_path, conf
 }
 
-func CreateAndRunCanary(ctx context.Context, conf *pb.Config) (types.BackupRestoreCanary, error) {
+func InMem_CreateAndRunCanary(ctx context.Context, conf *pb.Config) (types.BackupRestoreCanary, error) {
   builder, err := factory.NewFactory(conf)
   if err != nil { util.Fatalf("NewFactory: %v", err) }
   canary_mgr, err := builder.BuildBackupRestoreCanary(ctx, conf.Workflows[0].Name)
@@ -103,9 +103,9 @@ func CreateAndRunCanary(ctx context.Context, conf *pb.Config) (types.BackupResto
 func InMem_NoEncryption(ctx context.Context) {
   util.Infof("RUN InMem_NoEncryption")
   defer util.Infof("DONE InMem_NoEncryption")
-  root_path, conf := CreateRootAndCanaryConf()
+  root_path, conf := InMem_CreateRootAndCanaryConf()
 
-  canary_mgr, run_err := CreateAndRunCanary(ctx, conf)
+  canary_mgr, run_err := InMem_CreateAndRunCanary(ctx, conf)
   //util.Fatalf("boom: %v", run_err)
   tear_err := canary_mgr.TearDown(ctx)
 
@@ -119,9 +119,9 @@ func InMem_NoEncryption(ctx context.Context) {
 func InMem_WithEncryption(ctx context.Context) {
   util.Infof("RUN InMem_WithEncryption")
   defer util.Infof("DONE InMem_WithEncryption")
-  root_path, conf := CreateRootAndCanaryConf_WithEncryption()
+  root_path, conf := InMem_CreateRootAndCanaryConf_WithEncryption()
 
-  canary_mgr, run_err := CreateAndRunCanary(ctx, conf)
+  canary_mgr, run_err := InMem_CreateAndRunCanary(ctx, conf)
   //util.Fatalf("boom: %v", run_err)
   tear_err := canary_mgr.TearDown(ctx)
 

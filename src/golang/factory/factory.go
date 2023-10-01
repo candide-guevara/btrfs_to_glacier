@@ -84,6 +84,7 @@ func (self *Factory) BuildBackupObjects(
     if err != nil { return nil, nil, err }
     content, err = aws_content.NewBackupContentAdmin(self.Conf, aws_conf, backup.Name, codec)
     if err != nil { return nil, nil, err }
+    return meta, content, nil
   }
   if backup.Type == pb.Backup_FILESYSTEM {
     var err error
@@ -92,6 +93,7 @@ func (self *Factory) BuildBackupObjects(
     if err != nil { return nil, nil, err }
     content, err = local_fs.NewRoundRobinContentAdmin(self.Conf, self.Lu, codec, backup.Name)
     if err != nil { return nil, nil, err }
+    return meta, content, nil
   }
   if backup.Type == pb.Backup_MEM_EPHEMERAL {
     var err error
@@ -99,10 +101,9 @@ func (self *Factory) BuildBackupObjects(
     if err != nil { return nil, nil, err }
     content, err = mem_only.NewBackupContentAdmin(self.Conf, codec)
     if err != nil { return nil, nil, err }
-  } else {
-    return nil, nil, fmt.Errorf("%w bad backup type", ErrBadConfig)
+    return meta, content, nil
   }
-  return meta, content, nil
+  return nil, nil, fmt.Errorf("%w bad backup type", ErrBadConfig)
 }
 
 func (self *Factory) GetWorkflow(wf_name string) (types.ParsedWorkflow, error) {
