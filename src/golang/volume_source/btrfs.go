@@ -251,8 +251,9 @@ func (self *btrfsVolumeManager) CreateSnapshot_Helper(
   if len(subvol.MountedPath) < 1 || len(subvol.TreePath) < 1 {
     return nil, fmt.Errorf("CreateSnapshot subvol needs MountedPath and TreePath: %v", subvol)
   }
-  if len(subvol.ParentUuid) > 0 { return nil, fmt.Errorf("CreateSnapshot from a snapshot") }
-
+  if len(subvol.ParentUuid) > 0 && subvol.ReadOnly {
+    return nil, fmt.Errorf("Cannot CreateSnapshot from a snapshot: %v", subvol)
+   }
   snap_root, err := self.FindSnapPathForSubVolume(subvol)
   if err != nil { return nil, err }
 
