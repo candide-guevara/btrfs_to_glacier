@@ -73,6 +73,16 @@ func LocalFs_CreateRootAndCanaryConf(fs *types.Filesystem) (string, *pb.Config) 
   return root_path, conf
 }
 
+func LocalFs_CreateRootAndCanaryConf_WithEncryption(fs *types.Filesystem) (string, *pb.Config) {
+  root_path, conf := LocalFs_CreateRootAndCanaryConf(fs)
+  conf.Encryption = &pb.Encryption{
+    Type: pb.Encryption_AES_ZLIB_FOR_TEST,
+    Keys: []string{ "FyCp61aaFPP4LFBcCET5t/LjFNgRbhOyy/nA5AiPi4c=", },
+    Hash: "s/K9/iqVtJUGO8c63vBm5RKURXd5RgM7lzSN6OukwiWV3pi6baA7NUTLKS/T9sUTdFYuPf06st3kTtEBZ5OZkg==",
+  }
+  return root_path, conf
+}
+
 func LocalFs_SetupSingleExt4(
     ctx context.Context, linuxutil types.Linuxutil) (*types.Filesystem, error) {
   tmp_fs := &types.Filesystem{}
@@ -227,7 +237,6 @@ func LocalFs_NoEncryption_RefreshCanary(
   _, conf := LocalFs_CreateRootAndCanaryConf(fs)
 
   for i := 0; i < rounds; i++ {
-    util.Debugf(" ### round: %d", i)
     _, canary_mgr, token := LocalFs_CreateCanary_OrDie(ctx, conf, fs, linuxutil)
     clean_f := func() { LocalFs_TearDown_OrDie(ctx, conf, fs, canary_mgr, linuxutil) }
 
@@ -239,14 +248,46 @@ func LocalFs_NoEncryption_RefreshCanary(
   LocalFs_TearDown_OrDie(ctx, conf, fs, /*canary_mgr=*/nil, linuxutil)
 }
 
+func LocalFs_WithEncryption_ChangeKey(
+    ctx context.Context, test_name string, linuxutil types.Linuxutil) {
+  const rounds = 4
+  util.Infof("RUN %s", test_name)
+  defer util.Infof("DONE %s", test_name)
+  fs := LocalFs_SetupSingleExt4_OrDie(ctx, linuxutil)
+  _, conf := LocalFs_CreateRootAndCanaryConf_WithEncryption(fs)
+
+  for i := 0; i < rounds; i++ {
+    builder, canary_mgr, token := LocalFs_CreateCanary_OrDie(ctx, conf, fs, linuxutil)
+    clean_f := func() { LocalFs_TearDown_OrDie(ctx, conf, fs, canary_mgr, linuxutil) }
+
+    LocalFs_RunCanaryOnce_OrDie(ctx, canary_mgr, token, clean_f)
+    LocalFs_TearDown_OrDie(ctx, conf, /*fs=*/nil, canary_mgr, linuxutil)
+
+    if i == 1 {
+      codec, err := builder.BuildCodec()
+      if err != nil { util.Fatalf("builder.BuildCodec: %v", err) }
+      _, err = codec.CreateNewEncryptionKey()
+      if err != nil { util.Fatalf("CreateNewEncryptionKey: %v", err) }
+      keys, hash, err := codec.OutputEncryptedKeyring(/*pw_prompt=*/nil)
+      if err != nil { util.Fatalf("OutputEncryptedKeyring: %v", err) }
+      conf.Encryption.Keys = nil
+      conf.Encryption.Hash = hash.S
+      for _,k := range keys { conf.Encryption.Keys = append(conf.Encryption.Keys, k.S) }
+      encryption.TestOnlyResetGlobalKeyringState()
+    }
+  }
+  LocalFs_TearDown_OrDie(ctx, conf, fs, /*canary_mgr=*/nil, linuxutil)
+}
+
 func LocalFsMain(linuxutil types.Linuxutil) {
   ctx, cancel := context.WithTimeout(context.Background(), 1*time.Hour)
   defer cancel()
 
   //LocalFs_NoEncryption(ctx, "LocalFs_NoEncryption", linuxutil)
-  LocalFs_NoEncryption_RefreshCanary(ctx, "LocalFs_NoEncryption_RefreshCanary", linuxutil)
-  //LocalFs_WithEncryption(ctx)
-  //LocalFs_WithEncryption_ChangeKey(ctx)
+  //LocalFs_NoEncryption_RefreshCanary(ctx, "LocalFs_NoEncryption_RefreshCanary", linuxutil)
+  //LocalFs_NoEncryption_RoundRobin(ctx, "LocalFs_NoEncryption_RoundRobin", linuxutil)
+  LocalFs_WithEncryption_ChangeKey(ctx, "LocalFs_WithEncryption_ChangeKey", linuxutil)
+  //LocalFs_WithEncryption_ReEncrypt(ctx, "LocalFs_WithEncryption_ReEncrypt", linuxutil)
   util.Infof("InMemMain ALL DONE")
 }
 
