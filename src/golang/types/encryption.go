@@ -26,6 +26,7 @@ type Keyring interface {
   // Returns the fingerprint of the secret key used to encrypt.
   CurrentKeyFingerprint() PersistableString
   // Encrypts all secret keys in the keyring with `pw_prompt`.
+  // If `pw_prompt` is nil then encryt using the current password.
   // Does NOT change any internal state to prevent mixing different passwords.
   // Returns the re-encrypted keys in the keyword and the hash of all unencrypted keys.
   // That hash can later be used to detect tampering and password typos.

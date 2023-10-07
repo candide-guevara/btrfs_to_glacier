@@ -120,10 +120,14 @@ func (self *AesZlibCodecGlobalState) OutputEncryptedKeyring(
   if len(self.Keyring) == 0 {
     return nil, null_hash, fmt.Errorf("OutputEncryptedKeyring: Keyring is empty")
   }
-  xor_key, err := pw_prompt()
-  if err != nil { return nil, null_hash, err }
 
   self.Mutex.Lock()
+  var err error
+  xor_key := self.XorKey
+  if pw_prompt != nil {
+    xor_key, err = pw_prompt()
+    if err != nil { return nil, null_hash, err }
+  }
   keys := make([]types.PersistableKey, 0, len(self.Keyring))
   for _,pair := range self.Keyring {
     enc_key := encodeEncryptionKey(pair.Key, xor_key)
@@ -225,7 +229,7 @@ func (self *AesZlibCodecGlobalState) AddToKeyringThenEncode(
     }
   }
   enc_key := encodeEncryptionKey(dec_key, self.XorKey)
-  self.Keyring = append(self.Keyring, FpKeyPair{fp,dec_key})
+  self.Keyring = append([]FpKeyPair{ FpKeyPair{fp,dec_key} }, self.Keyring...)
   return enc_key, fp, nil
 }
 

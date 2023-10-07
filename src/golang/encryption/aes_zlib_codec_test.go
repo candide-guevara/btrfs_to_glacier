@@ -106,6 +106,24 @@ func TestAesZlibCodecGlobalState_OutputEncryptedKeyring(t *testing.T) {
   util.EqualsOrFailTest(t, "Bad new hash", new_hash.S, hash.S)
 }
 
+func TestAesZlibCodecGlobalState_OutputEncryptedKeyring_NilPw(t *testing.T) {
+  keys := []string {persisted_key_1, persisted_key_2,}
+
+  state := NewAesZlibCodecGlobalState()
+  if _, _, err := state.LoadKeyring(TestOnlyFixedPw, keys); err != nil {
+    t.Fatalf("state.LoadKeyring: %v", err)
+  }
+
+  new_keys, _, err := state.OutputEncryptedKeyring(nil)
+  if err != nil { t.Fatalf("state.OutputEncryptedKeyring: %v", err) }
+
+  for idx,k := range keys {
+    if strings.Compare(k, new_keys[idx].S) != 0 {
+      t.Errorf("at %d secret keys should be the same", idx)
+    }
+  }
+}
+
 func TestCodecDefaultKey(t *testing.T) {
   codec := buildTestCodec(t)
   first_persisted := types.PersistableKey{codec.conf.Encryption.Keys[0]}
@@ -296,6 +314,31 @@ func TestOutputEncryptedKeyring_Reload(t *testing.T) {
   TestOnlyResetGlobalKeyringState()
   new_codec, err2 := NewCodecHelper(new_conf, TestOnlyAnotherPw)
   if err2 != nil { t.Fatalf("Could not create codec: %v", err2) }
+
+  plain,_ := QuickDecryptString(t, new_codec, obfus)
+  util.EqualsOrFailTest(t, "Bad decryption", string(plain), expect_plain)
+}
+
+func TestOutputEncryptedKeyring_NewKey(t *testing.T) {
+  expect_plain := "chocoloco plain text"
+  codec := buildTestCodec(t)
+  _, err := codec.CreateNewEncryptionKey()
+  if err != nil { t.Fatalf("Could not create new key: %v", err) }
+  obfus, err := QuickEncryptString(t, codec, expect_plain)
+  if err != nil { t.Fatalf("%v", err) }
+
+  persisted_keys, hash, err := codec.OutputEncryptedKeyring(nil)
+  if err != nil { t.Fatalf("OutputEncryptedKeyring: %v", err) }
+
+  new_conf := util.LoadTestConf()
+  for _,k := range persisted_keys {
+    new_conf.Encryption.Keys = append(new_conf.Encryption.Keys, k.S)
+  }
+  new_conf.Encryption.Hash = hash.S
+
+  TestOnlyResetGlobalKeyringState()
+  new_codec, err := NewCodecHelper(new_conf, TestOnlyFixedPw)
+  if err != nil { t.Fatalf("Could not create codec: %v", err) }
 
   plain,_ := QuickDecryptString(t, new_codec, obfus)
   util.EqualsOrFailTest(t, "Bad decryption", string(plain), expect_plain)
