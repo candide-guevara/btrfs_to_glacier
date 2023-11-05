@@ -64,15 +64,15 @@ func InMem_CreateRootAndCanaryConf_WithEncryption() (string, *pb.Config) {
   encryption.TestOnlyResetGlobalKeyringState()
   root_path, conf := InMem_CreateRootAndCanaryConf()
   conf.Encryption = &pb.Encryption{
-    Type: pb.Encryption_AES_ZLIB_FOR_TEST,
-    Keys: []string{ "FyCp61aaFPP4LFBcCET5t/LjFNgRbhOyy/nA5AiPi4c=", },
-    Hash: "s/K9/iqVtJUGO8c63vBm5RKURXd5RgM7lzSN6OukwiWV3pi6baA7NUTLKS/T9sUTdFYuPf06st3kTtEBZ5OZkg==",
+    Type: pb.Encryption_AES_ZLIB,
+    Keys: []string{ "OC0aSSg2woV0bUfw0Ew1+ej5fYCzzIPcTnqbtuKXzk8=", },
+    Hash: "Wi2mJKi43luJgGn/dAxDAYbJrifsb9jdJdvd+r2MEKQoOPxcLnRXWnZSPC2mQQEC73cNeV7YDD+NI48O8T8dtw==",
   }
   return root_path, conf
 }
 
 func InMem_CreateAndRunCanary(ctx context.Context, conf *pb.Config) (types.BackupRestoreCanary, error) {
-  builder, err := factory.NewFactory(conf)
+  builder, err := factory.TestOnlyNewFactory(conf, encryption.TestOnlyFixedPw)
   if err != nil { util.Fatalf("NewFactory: %v", err) }
   canary_mgr, err := builder.BuildBackupRestoreCanary(ctx, conf.Workflows[0].Name)
   if err != nil { util.Fatalf("NewBackupRestoreCanary: %v", err) }

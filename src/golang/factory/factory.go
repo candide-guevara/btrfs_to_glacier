@@ -27,6 +27,13 @@ type Factory struct {
   Lu            types.Linuxutil
   Btrfsutil     types.Btrfsutil
   LazyVolAdmin  types.VolumeAdmin
+  PwPrompt      types.PwPromptF
+}
+
+func TestOnlyNewFactory(conf *pb.Config, pw_prompt types.PwPromptF) (*Factory, error) {
+  factory, err := NewFactory(conf)
+  if factory != nil { factory.PwPrompt = pw_prompt }
+  return factory, err
 }
 
 func NewFactory(conf *pb.Config) (*Factory, error) {
@@ -36,6 +43,7 @@ func NewFactory(conf *pb.Config) (*Factory, error) {
   if err != nil { return nil, err }
   factory.Btrfsutil, err = shim.NewBtrfsutil(conf, factory.Lu)
   if err != nil { return nil, err }
+  factory.PwPrompt = encryption.BuildPwPromt("Input password to decrypt keyring: ")
   return factory, err
 }
 
@@ -56,13 +64,7 @@ func (self Factory) BuildCodec() (types.Codec, error) {
     return encryption.NewNoopCodec(self.Conf)
   }
   if self.Conf.Encryption.Type == pb.Encryption_AES_ZLIB {
-    return encryption.NewCodec(self.Conf)
-  }
-  if self.Conf.Encryption.Type == pb.Encryption_AES_ZLIB_FOR_TEST {
-    pw_prompt := func() (types.SecretKey, error) {
-      return encryption.BytesToXorKey([]byte("some_pw")), nil
-    }
-    return encryption.NewCodecHelper(self.Conf, pw_prompt)
+    return encryption.NewCodecHelper(self.Conf, self.PwPrompt)
   }
   return nil, fmt.Errorf("%w bad encryption type", ErrBadConfig)
 }

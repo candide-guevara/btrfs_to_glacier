@@ -134,7 +134,6 @@ message Encryption {
     NOOP = 1;
     AES = 2;
     AES_ZLIB = 3;
-    AES_ZLIB_FOR_TEST = 4;
   }
   EncryptionType type = 1;
   // The first key is used to encrypt new content.

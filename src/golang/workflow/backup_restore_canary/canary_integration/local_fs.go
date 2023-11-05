@@ -76,9 +76,9 @@ func LocalFs_CreateRootAndCanaryConf(fs *types.Filesystem) (string, *pb.Config) 
 func LocalFs_CreateRootAndCanaryConf_WithEncryption(fs *types.Filesystem) (string, *pb.Config) {
   root_path, conf := LocalFs_CreateRootAndCanaryConf(fs)
   conf.Encryption = &pb.Encryption{
-    Type: pb.Encryption_AES_ZLIB_FOR_TEST,
-    Keys: []string{ "FyCp61aaFPP4LFBcCET5t/LjFNgRbhOyy/nA5AiPi4c=", },
-    Hash: "s/K9/iqVtJUGO8c63vBm5RKURXd5RgM7lzSN6OukwiWV3pi6baA7NUTLKS/T9sUTdFYuPf06st3kTtEBZ5OZkg==",
+    Type: pb.Encryption_AES_ZLIB,
+    Keys: []string{ "OC0aSSg2woV0bUfw0Ew1+ej5fYCzzIPcTnqbtuKXzk8=", },
+    Hash: "Wi2mJKi43luJgGn/dAxDAYbJrifsb9jdJdvd+r2MEKQoOPxcLnRXWnZSPC2mQQEC73cNeV7YDD+NI48O8T8dtw==",
   }
   return root_path, conf
 }
@@ -157,7 +157,7 @@ func LocalFs_TearDown_OrDie(ctx context.Context,
 
 func LocalFs_CreateCanary_OrDie(ctx context.Context,
     conf *pb.Config, fs *types.Filesystem, linuxutil types.Linuxutil) (types.Factory, types.BackupRestoreCanary, types.CanaryToken) {
-  builder, err := factory.NewFactory(conf)
+  builder, err := factory.TestOnlyNewFactory(conf, encryption.TestOnlyFixedPw)
   if err != nil {
     fs_err := LocalFs_TearDownSinglePart(ctx, fs, linuxutil)
     util.Fatalf("NewFactory: %v, fs_err: %v", err, fs_err)
@@ -257,19 +257,33 @@ func LocalFs_WithEncryption_ChangeKey(
   _, conf := LocalFs_CreateRootAndCanaryConf_WithEncryption(fs)
 
   for i := 0; i < rounds; i++ {
-    builder, canary_mgr, token := LocalFs_CreateCanary_OrDie(ctx, conf, fs, linuxutil)
+    _, canary_mgr, token := LocalFs_CreateCanary_OrDie(ctx, conf, fs, linuxutil)
     clean_f := func() { LocalFs_TearDown_OrDie(ctx, conf, fs, canary_mgr, linuxutil) }
 
     LocalFs_RunCanaryOnce_OrDie(ctx, canary_mgr, token, clean_f)
     LocalFs_TearDown_OrDie(ctx, conf, /*fs=*/nil, canary_mgr, linuxutil)
 
     if i == 1 {
+      builder, err := factory.TestOnlyNewFactory(conf, encryption.TestOnlyFixedPw)
+      if err != nil {
+        LocalFs_TearDown_OrDie(ctx, conf, fs, /*canary_mgr=*/nil, linuxutil)
+        util.Fatalf("TestOnlyNewFactory: %v", err)
+      }
       codec, err := builder.BuildCodec()
-      if err != nil { util.Fatalf("builder.BuildCodec: %v", err) }
+      if err != nil {
+        LocalFs_TearDown_OrDie(ctx, conf, fs, /*canary_mgr=*/nil, linuxutil)
+        util.Fatalf("builder.BuildCodec: %v", err)
+      }
       _, err = codec.CreateNewEncryptionKey()
-      if err != nil { util.Fatalf("CreateNewEncryptionKey: %v", err) }
+      if err != nil {
+        LocalFs_TearDown_OrDie(ctx, conf, fs, /*canary_mgr=*/nil, linuxutil)
+        util.Fatalf("CreateNewEncryptionKey: %v", err)
+      }
       keys, hash, err := codec.OutputEncryptedKeyring(/*pw_prompt=*/nil)
-      if err != nil { util.Fatalf("OutputEncryptedKeyring: %v", err) }
+      if err != nil {
+        LocalFs_TearDown_OrDie(ctx, conf, fs, /*canary_mgr=*/nil, linuxutil)
+        util.Fatalf("OutputEncryptedKeyring: %v", err)
+      }
       conf.Encryption.Keys = nil
       conf.Encryption.Hash = hash.S
       for _,k := range keys { conf.Encryption.Keys = append(conf.Encryption.Keys, k.S) }
@@ -279,15 +293,78 @@ func LocalFs_WithEncryption_ChangeKey(
   LocalFs_TearDown_OrDie(ctx, conf, fs, /*canary_mgr=*/nil, linuxutil)
 }
 
+func PrintFilesystemOrDie(builder types.Factory, clean_f func()) {
+  util.Warnf("\n\n### FILESYSTEM ###\n\n")
+  real_builder, ok := builder.(*factory.Factory)
+  if !ok { clean_f(); util.Fatalf("real_builder: %v", ok) }
+  wf, err := real_builder.GetWorkflow(real_builder.Conf.Workflows[0].Name)
+  if err != nil { clean_f(); util.Fatalf("real_builder.GetWorkflow: %v", err) }
+  drop_f := real_builder.Lu.GetRootOrDie()
+  fs_sv, err := real_builder.Btrfsutil.ListSubVolumesInFs(wf.Restore.RootRestorePath, false)
+  drop_f()
+  if err != nil { clean_f(); util.Fatalf("ListSubVolumesInFs: %v", err) }
+  for _,sv := range fs_sv {
+    util.Warnf(util.AsJson(sv))
+  }
+  util.Warnf("\n\n### END FILESYSTEM ###\n\n")
+}
+
+func LocalFs_WithEncryption_ReEncrypt(
+    ctx context.Context, test_name string, linuxutil types.Linuxutil) {
+  const rounds = 4
+  util.Infof("RUN %s", test_name)
+  defer util.Infof("DONE %s", test_name)
+  fs := LocalFs_SetupSingleExt4_OrDie(ctx, linuxutil)
+  _, conf := LocalFs_CreateRootAndCanaryConf_WithEncryption(fs)
+
+  builder, canary_mgr, token := LocalFs_CreateCanary_OrDie(ctx, conf, fs, linuxutil)
+  clean_f := func() { LocalFs_TearDown_OrDie(ctx, conf, fs, canary_mgr, linuxutil) }
+
+  for i := 0; i < rounds; i++ {
+    LocalFs_RunCanaryOnce_OrDie(ctx, canary_mgr, token, clean_f)
+
+    if i == 1 {
+      LocalFs_TearDown_OrDie(ctx, conf, /*fs=*/nil, canary_mgr, linuxutil)
+
+      codec, err := builder.BuildCodec()
+      if err != nil { clean_f(); util.Fatalf("builder.BuildCodec: %v", err) }
+      keys, hash, err := codec.OutputEncryptedKeyring(encryption.TestOnlyAnotherPw)
+      if err != nil { clean_f(); util.Fatalf("OutputEncryptedKeyring: %v", err) }
+      conf.Encryption.Keys = nil
+      conf.Encryption.Hash = hash.S
+      for _,k := range keys { conf.Encryption.Keys = append(conf.Encryption.Keys, k.S) }
+      encryption.TestOnlyResetGlobalKeyringState()
+
+      builder, err = factory.TestOnlyNewFactory(conf, encryption.TestOnlyAnotherPw)
+      if err != nil {
+        LocalFs_TearDown_OrDie(ctx, conf, fs, /*canary_mgr=*/nil, linuxutil)
+        util.Fatalf("NewFactory: %v", err)
+      }
+      canary_mgr, err = builder.BuildBackupRestoreCanary(ctx, conf.Workflows[0].Name)
+      if err != nil {
+        LocalFs_TearDown_OrDie(ctx, conf, fs, /*canary_mgr=*/nil, linuxutil)
+        util.Fatalf("NewBackupRestoreCanary: %v", err)
+      }
+      token, err = canary_mgr.Setup(ctx)
+      if err != nil {
+        LocalFs_TearDown_OrDie(ctx, conf, fs, canary_mgr, linuxutil)
+        util.Fatalf("Canary Setup: %v", err)
+      }
+      clean_f = func() { LocalFs_TearDown_OrDie(ctx, conf, fs, canary_mgr, linuxutil) }
+    }
+  }
+  LocalFs_TearDown_OrDie(ctx, conf, fs, canary_mgr, linuxutil)
+}
+
 func LocalFsMain(linuxutil types.Linuxutil) {
   ctx, cancel := context.WithTimeout(context.Background(), 1*time.Hour)
   defer cancel()
 
-  //LocalFs_NoEncryption(ctx, "LocalFs_NoEncryption", linuxutil)
-  //LocalFs_NoEncryption_RefreshCanary(ctx, "LocalFs_NoEncryption_RefreshCanary", linuxutil)
+  LocalFs_NoEncryption(ctx, "LocalFs_NoEncryption", linuxutil)
+  LocalFs_NoEncryption_RefreshCanary(ctx, "LocalFs_NoEncryption_RefreshCanary", linuxutil)
   //LocalFs_NoEncryption_RoundRobin(ctx, "LocalFs_NoEncryption_RoundRobin", linuxutil)
   LocalFs_WithEncryption_ChangeKey(ctx, "LocalFs_WithEncryption_ChangeKey", linuxutil)
-  //LocalFs_WithEncryption_ReEncrypt(ctx, "LocalFs_WithEncryption_ReEncrypt", linuxutil)
+  LocalFs_WithEncryption_ReEncrypt(ctx, "LocalFs_WithEncryption_ReEncrypt", linuxutil)
   util.Infof("InMemMain ALL DONE")
 }
 

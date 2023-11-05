@@ -56,11 +56,6 @@ type aesZlibCodec struct {
   cur_key    types.SecretKey
 }
 
-func NewCodec(conf *pb.Config) (types.Codec, error) {
-  pw_prompt := BuildPwPromt("AesCodec input password to decrypt keyring: ")
-  return NewCodecHelper(conf, pw_prompt)
-}
-
 func NewCodecHelper(conf *pb.Config, pw_prompt types.PwPromptF) (types.Codec, error) {
   codec := &aesZlibCodec{
     conf: conf,
