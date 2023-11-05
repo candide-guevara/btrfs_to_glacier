@@ -19,7 +19,7 @@ const (
 
 var ErrSnapsMismatchWithSrc = errors.New("snapshot_mismatch_between_meta_and_source")
 var ErrExpectCloneFromLastRec = errors.New("clone_should_be_issued_from_a_received_snap")
-var ErrCloneShouldHaveNoChild = errors.New("unrelated_clone_must_not_have_previous_snap_children")
+var ErrCannotFindParForClone = errors.New("unrelated_clone_cannot_find_suitable_restored_snap_par")
 
 // Meta and Content must already been setup
 type BackupManager struct {
@@ -229,13 +229,23 @@ func (self *BackupManager) BackupToCurrentSequenceUnrelatedVol(
   if err != nil { return nil, err }
 
   clone_seq, err := self.CreateNewSnapshotOrUseRecent(src, /*use_recent=*/false)
-  if err != nil || len(clone_seq) != 1 {
-    return nil, fmt.Errorf("%w: %v", ErrCloneShouldHaveNoChild, err)
+  if err != nil { return nil, err }
+  clone_snap := clone_seq[len(clone_seq) - 1]
+
+  var last_rec_snap *pb.SubVolume
+  // If this is the first snapshot we create from the clone
+  // then the parent is the last restored snapshot.
+  if len(clone_seq) == 1 {
+    last_rec_snap, err = self.Source.FindVolume(src.MountedPath, types.ByUuid(src.ParentUuid))
+    if err != nil || last_rec_snap == nil {
+      return nil, fmt.Errorf("%w: last_rec_snap=%v err=%v", ErrCannotFindParForClone, last_rec_snap, err)
+    }
+    if len(last_rec_snap.ReceivedUuid) == 0 {
+      return nil, fmt.Errorf("%w: %v", ErrExpectCloneFromLastRec, last_rec_snap)
+    }
   }
-  clone_snap := clone_seq[0]
-  last_rec_snap, err := self.Source.FindVolume(src.MountedPath, types.ByUuid(src.ParentUuid))
-  if err != nil || last_rec_snap == nil || len(last_rec_snap.ReceivedUuid) == 0 {
-    return nil, fmt.Errorf("%w: %v", ErrExpectCloneFromLastRec, err)
+  /*else */ if len(clone_seq) != 1 {
+    last_rec_snap = clone_seq[len(clone_seq) - 2]
   }
 
   // Hack to make it look as if it all comes from the same subvolume

@@ -490,7 +490,7 @@ func TestBackupToCurrentSequenceUnrelatedVol_NoParInSrcFail(t *testing.T) {
   prev_uuid := mocks.Meta.HeadKeys()[0]
   sv := mocks.AddSubVolumeInSrc(mocks.ConfSrc.Paths[0], uuid.NewString())
   _, err := mgr.BackupToCurrentSequenceUnrelatedVol(ctx, sv, prev_uuid)
-  if !errors.Is(err, ErrExpectCloneFromLastRec) {
+  if !errors.Is(err, ErrCannotFindParForClone) {
     util.Fatalf("BackupToCurrentSequenceUnrelatedVol: %v", err)
   }
 }
@@ -504,10 +504,11 @@ func TestBackupToCurrentSequenceUnrelatedVol_CloneChildInSrc(t *testing.T) {
   prev_uuid := mocks.Meta.HeadKeys()[0]
   sv := mocks.AddSubVolumeInSrc(mocks.ConfSrc.Paths[0], uuid.NewString())
   mocks.AddSnapshotInSrc(sv, uuid.NewString(), /*recent=*/true)
-  _, err := mgr.BackupToCurrentSequenceUnrelatedVol(ctx, sv, prev_uuid)
-  if !errors.Is(err, ErrCloneShouldHaveNoChild) {
-    util.Fatalf("BackupToCurrentSequenceUnrelatedVol: %v", err)
-  }
+  snap, err := mgr.BackupToCurrentSequenceUnrelatedVol(ctx, sv, prev_uuid)
+  if err != nil { util.Fatalf("BackupToCurrentSequenceUnrelatedVol: %v", err) }
+  util.EqualsOrFailTest(t, "bad par_uuid", snap.ParentUuid, prev_uuid)
+  util.EqualsOrFailTest(t, "bad rec_uuid", snap.ReceivedUuid, "")
+  ValidateUnrelatedBackupSnap(t, mocks, sv, snap, prev_uuid)
 }
 
 func TestBackupToCurrentSequenceUnrelatedVol_Normal(t *testing.T) {
@@ -525,25 +526,27 @@ func TestBackupToCurrentSequenceUnrelatedVol_Normal(t *testing.T) {
                                   IncSource(0, 1, 1, 0).
                                   IncStore(1, 0)
 
-  snap, err := mgr.BackupToCurrentSequenceUnrelatedVol(ctx, sv, uuid_for_backup)
+  clone_snap1, err := mgr.BackupToCurrentSequenceUnrelatedVol(ctx, sv, uuid_for_backup)
   if err != nil { util.Fatalf("BackupToCurrentSequenceUnrelatedVol: %v", err) }
 
-  ValidateUnrelatedBackupSnap(t, mocks, sv, snap, uuid_for_backup)
+  ValidateUnrelatedBackupSnap(t, mocks, sv, clone_snap1, uuid_for_backup)
   ValidateObjectCounts(t, mocks, new_state)
   if len(mocks.Source.GetSnapshotStreamCalls) != 1 {
     t.Errorf("Bad number of GetSnapshotStream calls: %d",
              len(mocks.Source.GetSnapshotStreamCalls))
   }
   args := mocks.Source.GetSnapshotStreamCalls[0]
-  expect_args := [2]string{ last_rec_snap.Uuid, snap.Uuid, }
-  util.EqualsOrFailTest(t, "bad GetSnapshotStream args", args, expect_args)
+  expect_args := [2]string{ last_rec_snap.Uuid, clone_snap1.Uuid, }
+  util.EqualsOrFailTest(t, "bad GetSnapshotStream0 args", args, expect_args)
 
-  // NON Idempotency
-  // Contrary to BackupAllToCurrentSequences, we never reuse any subvolume from
-  // the volume source, metadata or storage.
-  _, err = mgr.BackupToCurrentSequenceUnrelatedVol(ctx, sv, uuid_for_backup)
-  if !errors.Is(err, ErrCloneShouldHaveNoChild) {
-    t.Errorf("BackupToCurrentSequenceUnrelatedVol: %v", err)
-  }
+  // You can re-use last clone for appending more snapshots.
+  new_state = mocks.CountState().IncMeta(0, 0, 1, 1).
+                                 IncSource(0, 0, 1, 0).
+                                 IncStore(1, 0)
+  clone_snap2, err := mgr.BackupToCurrentSequenceUnrelatedVol(ctx, sv, uuid_for_backup)
+  args = mocks.Source.GetSnapshotStreamCalls[1]
+  expect_args = [2]string{ clone_snap1.Uuid, clone_snap2.Uuid, }
+  util.EqualsOrFailTest(t, "bad GetSnapshotStream1 args", args, expect_args)
+  ValidateObjectCounts(t, mocks, new_state)
 }
 
