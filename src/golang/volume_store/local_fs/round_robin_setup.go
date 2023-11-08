@@ -106,12 +106,14 @@ func (self *RoundRobinSetup) FindOldestPartition() (*pb.Backup_Partition, error)
     if err != nil && !util.IsNotExist(err) { return nil, err }
 
     part_time := modTime(finfo)
+    //util.Debugf("%s -> %v", link, part_time)
     if part_time.Before(oldest_ts) || part_time.Equal(oldest_ts) {
       oldest_part = part
       oldest_ts = part_time
     }
   }
   if oldest_part == nil { util.Fatalf("Failed to get oldest partition") }
+  //util.Debugf("FindOldestPartition = %s", util.AsJson(oldest_part))
   return oldest_part, nil
 }
 

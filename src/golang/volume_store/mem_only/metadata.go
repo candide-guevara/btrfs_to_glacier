@@ -165,7 +165,7 @@ func (self *Metadata) ReadSnapshotSeqHead(
   err := store.ValidateSnapshotSeqHead(head)
   if err != nil { return nil, err }
 
-  util.PbInfof("Read head: %v", head)
+  //util.PbInfof("Read head: %v", head)
   return proto.Clone(head).(*pb.SnapshotSeqHead), nil
 }
 
@@ -179,7 +179,7 @@ func (self *Metadata) ReadSnapshotSeq(
   err := store.ValidateSnapshotSequence(seq)
   if err != nil { return nil, err }
 
-  util.PbInfof("Read sequence: %v", seq)
+  //util.PbInfof("Read sequence: %v", seq)
   return proto.Clone(seq).(*pb.SnapshotSequence), nil
 }
 
@@ -193,7 +193,7 @@ func (self *Metadata) ReadSnapshot(
   err := store.ValidateSubVolume(store.CheckSnapWithContent, snap)
   if err != nil { return nil, err }
 
-  util.PbInfof("Read subvolume: %v", snap)
+  //util.PbInfof("Read subvolume: %v", snap)
   return proto.Clone(snap).(*pb.SubVolume), nil
 }
 

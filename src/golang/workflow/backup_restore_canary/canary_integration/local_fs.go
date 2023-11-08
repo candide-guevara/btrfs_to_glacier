@@ -13,6 +13,7 @@ import (
   pb "btrfs_to_glacier/messages"
   "btrfs_to_glacier/types"
   "btrfs_to_glacier/util"
+  "btrfs_to_glacier/workflow/backup_restore_canary"
 
   "github.com/google/uuid"
 )
@@ -69,7 +70,7 @@ func LocalFs_CreateRootAndCanaryConf(fs *types.Filesystem) (string, *pb.Config) 
     Workflows: []*pb.Workflow{ workflow, },
     Encryption: encryption,
   }
-  util.PbInfof("Canary conf:\n%s", conf)
+  //util.PbInfof("Canary conf:\n%s", conf)
   return root_path, conf
 }
 
@@ -80,6 +81,24 @@ func LocalFs_CreateRootAndCanaryConf_WithEncryption(fs *types.Filesystem) (strin
     Keys: []string{ "OC0aSSg2woV0bUfw0Ew1+ej5fYCzzIPcTnqbtuKXzk8=", },
     Hash: "Wi2mJKi43luJgGn/dAxDAYbJrifsb9jdJdvd+r2MEKQoOPxcLnRXWnZSPC2mQQEC73cNeV7YDD+NI48O8T8dtw==",
   }
+  //util.PbInfof("Canary conf:\n%s", conf)
+  return root_path, conf
+}
+
+func LocalFs_CreateRootAndCanaryConf_RoundRobin(fs_list []*types.Filesystem) (string, *pb.Config) {
+  root_path, conf := LocalFs_CreateRootAndCanaryConf(fs_list[0])
+  sinks := []*pb.Backup_Partition{}
+  for _,fs := range fs_list {
+    sink := &pb.Backup_Partition{
+      FsUuid: fs.Uuid,
+      MountRoot: fs.Mounts[0].MountedPath,
+      MetadataDir: "metadata",
+      StorageDir: "storage",
+    }
+    sinks = append(sinks, sink)
+  }
+  conf.Backups[0].Fs.Sinks = sinks
+  //util.PbInfof("Canary conf:\n%s", conf)
   return root_path, conf
 }
 
@@ -137,6 +156,13 @@ func LocalFs_TearDownSinglePart(
   return util.Coalesce(umount_err, deldev_err, deldir_err)
 }
 
+func LocalFs_TearDownRoundRobinPart(
+    ctx context.Context, fs_list []*types.Filesystem, linuxutil types.Linuxutil) {
+  for _,fs := range fs_list {
+    if fs != nil { LocalFs_TearDownSinglePart(ctx, fs, linuxutil) }
+  }
+}
+
 func LocalFs_TearDown_OrDie(ctx context.Context,
     conf *pb.Config, fs *types.Filesystem, canary_mgr types.BackupRestoreCanary, linuxutil types.Linuxutil) {
   var can_err, fs_err error
@@ -153,6 +179,22 @@ func LocalFs_TearDown_OrDie(ctx context.Context,
     util.Fatalf("TearDown\nCanary: %v\nFsSetup: %v", can_err, fs_err)
   }
   util.Infof("LocalFs_TearDown_OrDie no err")
+}
+
+func LocalFs_TearDownRoundRobin_OrDie(ctx context.Context,
+    conf *pb.Config, fs_list []*types.Filesystem, canary_mgr types.BackupRestoreCanary, linuxutil types.Linuxutil) {
+  var can_err error
+  root_path := fpmod.Dir(conf.Restores[0].RootRestorePath)
+
+  if canary_mgr != nil { can_err = canary_mgr.TearDown(ctx) }
+  err := util.RemoveAll(root_path)
+  if err != nil { util.Warnf("Cannot remove loop device mount point: %v", err) }
+
+  LocalFs_TearDownRoundRobinPart(ctx, fs_list, linuxutil)
+  if can_err != nil {
+    util.Fatalf("TearDown\nCanary: %v\n", can_err)
+  }
+  util.Infof("LocalFs_TearDownRoundRobin_OrDie no err")
 }
 
 func LocalFs_CreateCanary_OrDie(ctx context.Context,
@@ -191,6 +233,88 @@ func LocalFs_RunCanaryOnce_OrDie(
   //util.Fatalf("boom: %v", err)
 }
 
+func ReadHeadAndSequenceMap_orDie(ctx context.Context,
+    canary types.BackupRestoreCanary, clean_f func()) types.HeadAndSequenceMap {
+  real_canary, ok := canary.(*backup_restore_canary.BackupRestoreCanary)
+  if !ok {
+    clean_f()
+    util.Fatalf("Cannot cast to backup_restore_canary.BackupRestoreCanary")
+  }
+  restore_mgr := real_canary.State.RestoreMgr
+  head_to_seq, err := restore_mgr.ReadHeadAndSequenceMap(ctx)
+  if err != nil {
+    clean_f()
+    util.Fatalf("ReadHeadAndSequenceMap: %v", err)
+  }
+  //util.Debugf("HeadAndSequenceMap: %s", util.AsJson(head_to_seq))
+  return head_to_seq
+}
+
+func LocalFs_NoEncryption_RoundRobin(
+    ctx context.Context, test_name string, linuxutil types.Linuxutil) {
+  const rounds = 3
+  const parts = 2
+  util.Infof("RUN %s", test_name)
+  defer util.Infof("DONE %s", test_name)
+
+  fs_list := []*types.Filesystem{}
+  fiasco := false
+  for i:=0; i<parts; i+=1 {
+    fs, err := LocalFs_SetupSingleExt4(ctx, linuxutil)
+    fs_list = append(fs_list, fs)
+    fiasco = fiasco || (err != nil)
+  }
+  if fiasco {
+    LocalFs_TearDownRoundRobinPart(ctx, fs_list, linuxutil)
+    util.Fatalf("LocalFs_SetupSingleExt4_OrDie")
+  }
+  _, conf := LocalFs_CreateRootAndCanaryConf_RoundRobin(fs_list)
+  heads := make([]types.HeadAndSequenceMap, parts)
+
+  for i := 0; i < parts*rounds; i+=1 {
+    builder, err := factory.TestOnlyNewFactory(conf, encryption.TestOnlyFixedPw)
+    if err != nil {
+      LocalFs_TearDownRoundRobinPart(ctx, fs_list, linuxutil)
+      util.Fatalf("NewFactory: %v", err)
+    }
+    canary_mgr, err := builder.BuildBackupRestoreCanary(ctx, conf.Workflows[0].Name)
+    if err != nil {
+      LocalFs_TearDownRoundRobinPart(ctx, fs_list, linuxutil)
+      util.Fatalf("NewBackupRestoreCanary: %v", err)
+    }
+    token, err := canary_mgr.Setup(ctx)
+    if err != nil {
+      LocalFs_TearDownRoundRobin_OrDie(ctx, conf, fs_list, canary_mgr, linuxutil)
+      util.Fatalf("Canary Setup: %v", err)
+    }
+    clean_f := func() { LocalFs_TearDownRoundRobin_OrDie(ctx, conf, fs_list, canary_mgr, linuxutil) }
+
+    LocalFs_RunCanaryOnce_OrDie(ctx, canary_mgr, token, clean_f)
+    heads[i%parts] = ReadHeadAndSequenceMap_orDie(ctx, canary_mgr, clean_f)
+    LocalFs_TearDownRoundRobin_OrDie(ctx, conf, /*fs_list=*/nil, canary_mgr, linuxutil)
+    if i%parts == 0 { time.Sleep(time.Second) }
+  }
+
+  var err error
+  head_loop: for r,head := range heads {
+    if len(head) != 1 {
+      err = fmt.Errorf("part=%d Bad HeadAndSequenceMap len=%d", r, len(head))
+      break head_loop
+    }
+    for _,head_seq := range head {
+      snap_uuids := head_seq.Cur.SnapUuids
+      if len(snap_uuids) != rounds + 1 {
+        err = fmt.Errorf("part=%d Bad head_seq.Cur.SnapUuids len=%d", r, len(snap_uuids))
+        util.Warnf("head: %s", util.AsJson(head_seq))
+        break head_loop
+      }
+    }
+  }
+  // util.Fatalf("boom")
+  LocalFs_TearDownRoundRobin_OrDie(ctx, conf, fs_list, /*canary_mgr=*/nil, linuxutil)
+  if err != nil { util.Fatalf("%v", err) }
+}
+
 func LocalFs_NoEncryption(
     ctx context.Context, test_name string, linuxutil types.Linuxutil) {
   const rounds = 5
@@ -199,25 +323,15 @@ func LocalFs_NoEncryption(
   fs := LocalFs_SetupSingleExt4_OrDie(ctx, linuxutil)
   _, conf := LocalFs_CreateRootAndCanaryConf(fs)
 
-  builder, canary_mgr, token := LocalFs_CreateCanary_OrDie(ctx, conf, fs, linuxutil)
+  _, canary_mgr, token := LocalFs_CreateCanary_OrDie(ctx, conf, fs, linuxutil)
   clean_f := func() { LocalFs_TearDown_OrDie(ctx, conf, fs, canary_mgr, linuxutil) }
 
   for i := 0; i < rounds; i++ {
     LocalFs_RunCanaryOnce_OrDie(ctx, canary_mgr, token, clean_f)
   }
-  restore_mgr, err := builder.BuildRestoreManagerAdmin(ctx, conf.Workflows[0].Name)
-  if err == nil { err = restore_mgr.Setup(ctx) }
-  if err != nil {
-    clean_f()
-    util.Fatalf("BuildRestoreManagerAdmin: %v", err)
-  }
-  head_to_seq, err := restore_mgr.ReadHeadAndSequenceMap(ctx)
-  if err != nil {
-    clean_f()
-    util.Fatalf("ReadHeadAndSequenceMap: %v", err)
-  }
-  util.Debugf("HeadAndSequenceMap: %s", util.AsJson(head_to_seq))
+  head_to_seq := ReadHeadAndSequenceMap_orDie(ctx, canary_mgr, clean_f)
 
+  var err error
   if len(head_to_seq) != 1 { err = fmt.Errorf("Bad HeadAndSequenceMap len") }
   for _,head_seq := range head_to_seq {
     snap_uuids := head_seq.Cur.SnapUuids
@@ -362,7 +476,7 @@ func LocalFsMain(linuxutil types.Linuxutil) {
 
   LocalFs_NoEncryption(ctx, "LocalFs_NoEncryption", linuxutil)
   LocalFs_NoEncryption_RefreshCanary(ctx, "LocalFs_NoEncryption_RefreshCanary", linuxutil)
-  //LocalFs_NoEncryption_RoundRobin(ctx, "LocalFs_NoEncryption_RoundRobin", linuxutil)
+  LocalFs_NoEncryption_RoundRobin(ctx, "LocalFs_NoEncryption_RoundRobin", linuxutil)
   LocalFs_WithEncryption_ChangeKey(ctx, "LocalFs_WithEncryption_ChangeKey", linuxutil)
   LocalFs_WithEncryption_ReEncrypt(ctx, "LocalFs_WithEncryption_ReEncrypt", linuxutil)
   util.Infof("InMemMain ALL DONE")
