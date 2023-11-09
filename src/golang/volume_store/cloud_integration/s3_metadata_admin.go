@@ -15,7 +15,7 @@ type s3MetaAdminTester struct { *s3MetaReadWriteTester }
 
 func (self *s3MetaAdminTester) deleteBucket(ctx context.Context) error {
   bucket := Backup(self.Conf).Aws.S3.MetadataBucketName
-  return DeleteBucket(ctx, self.Client, bucket)
+  return s3_common.DeleteBucket(ctx, self.Client, bucket)
 }
 
 func (self *s3MetaAdminTester) TestS3MetadataSetup(ctx context.Context) {

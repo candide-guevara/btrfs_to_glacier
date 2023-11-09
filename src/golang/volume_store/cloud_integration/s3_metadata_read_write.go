@@ -7,6 +7,7 @@ import (
   pb "btrfs_to_glacier/messages"
   "btrfs_to_glacier/types"
   "btrfs_to_glacier/util"
+  s3_common "btrfs_to_glacier/volume_store/aws_s3_common"
 
   "github.com/aws/aws-sdk-go-v2/aws"
   "github.com/aws/aws-sdk-go-v2/service/s3"
@@ -27,27 +28,27 @@ func (self *s3MetaReadWriteTester) PutPersistedStateGetVersions(
   meta.TestOnlySetInnerState(self.Metadata, proto.Clone(state).(*pb.AllMetadata))
 
   if del_prev {
-    EmptyBucketOrDie(ctx, self.Client, bucket)
-    PutProtoOrDie(ctx, self.Client, bucket, meta.MetadataKey, state)
+    s3_common.EmptyBucketOrDie(ctx, self.Client, bucket)
+    s3_common.PutProtoOrDie(ctx, self.Client, bucket, meta.MetadataKey, state)
     return nil
   }
-  PutProtoOrDie(ctx, self.Client, bucket, meta.MetadataKey, state)
+  s3_common.PutProtoOrDie(ctx, self.Client, bucket, meta.MetadataKey, state)
   //time.Sleep(3*time.Second)
-  versions := ListObjectVersionsOrDie(ctx, self.Client, bucket, meta.MetadataKey)
+  versions := s3_common.ListObjectVersionsOrDie(ctx, self.Client, bucket, meta.MetadataKey)
   return versions
 }
 
 func (self *s3MetaReadWriteTester) GetPersistedStateAndVersions(ctx context.Context) (*pb.AllMetadata, []string) {
   bucket := Backup(self.Conf).Aws.S3.MetadataBucketName
   state := &pb.AllMetadata{}
-  GetProtoOrDie(ctx, self.Client, bucket, meta.MetadataKey, state)
+  s3_common.GetProtoOrDie(ctx, self.Client, bucket, meta.MetadataKey, state)
   //time.Sleep(3*time.Second)
-  versions := ListObjectVersionsOrDie(ctx, self.Client, bucket, meta.MetadataKey)
+  versions := s3_common.ListObjectVersionsOrDie(ctx, self.Client, bucket, meta.MetadataKey)
   return state, versions
 }
 
 func (self *s3MetaReadWriteTester) TestPersistCurrentMetadataState_New(ctx context.Context) {
-  EmptyBucketOrDie(ctx, self.Client, Backup(self.Conf).Aws.S3.MetadataBucketName)
+  s3_common.EmptyBucketOrDie(ctx, self.Client, Backup(self.Conf).Aws.S3.MetadataBucketName)
   meta.TestOnlySetInnerState(self.Metadata, &pb.AllMetadata{})
   new_seq := util.DummySnapshotSequence(uuid.NewString(), uuid.NewString())
 
@@ -90,6 +91,6 @@ func TestAllS3Metadata(ctx context.Context, conf *pb.Config, aws_conf *aws.Confi
   suite.TestS3MetadataSetup(ctx)
   suite.TestPersistCurrentMetadataState_New(ctx)
   suite.TestPersistCurrentMetadataState_Add(ctx)
-  DeleteBucketOrDie(ctx, client, Backup(conf).Aws.S3.MetadataBucketName)
+  s3_common.DeleteBucketOrDie(ctx, client, Backup(conf).Aws.S3.MetadataBucketName)
 }
 

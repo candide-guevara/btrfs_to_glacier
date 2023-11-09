@@ -30,20 +30,20 @@ type s3StoreReadWriteTester struct {
 
 func (self *s3StoreReadWriteTester) getObject(ctx context.Context, key string) ([]byte, error) {
   bucket := Backup(self.Conf).Aws.S3.StorageBucketName
-  return GetObject(ctx, self.Client, bucket, key)
+  return s3_common.GetObject(ctx, self.Client, bucket, key)
 }
 
 func (self *s3StoreReadWriteTester) putRandomObject(ctx context.Context, size int) (string, []byte, error) {
   bucket := Backup(self.Conf).Aws.S3.StorageBucketName
   data := util.GenerateRandomTextData(size)
   key := uuid.NewString()
-  err := PutObject(ctx, self.Client, bucket, key, data)
+  err := s3_common.PutObject(ctx, self.Client, bucket, key, data)
   return key, data, err
 }
 
 func (self *s3StoreReadWriteTester) getObjectOrDie(ctx context.Context, key string) []byte {
   bucket := Backup(self.Conf).Aws.S3.StorageBucketName
-  return GetObjectOrDie(ctx, self.Client, bucket, key)
+  return s3_common.GetObjectOrDie(ctx, self.Client, bucket, key)
 }
 
 func (self *s3StoreReadWriteTester) putRandomObjectOrDie(ctx context.Context, size int) (string, []byte) {
@@ -243,7 +243,7 @@ func (self *s3StoreReadWriteTester) TestQueueRestoreObjects_AlreadyRestored(ctx 
 
 func (self *s3StoreReadWriteTester) testListAllChunks_Helper(ctx context.Context, total int, fill_size int32) {
   bucket := Backup(self.Conf).Aws.S3.StorageBucketName
-  EmptyBucketOrDie(ctx, self.Client, bucket)
+  s3_common.EmptyBucketOrDie(ctx, self.Client, bucket)
   restore_f := store.TestOnlyChangeIterationSize(self.Storage, fill_size)
   defer restore_f()
   expect_objs := make(map[string]*pb.SnapshotChunks_Chunk)
@@ -335,6 +335,6 @@ func TestAllS3Storage(ctx context.Context, conf *pb.Config, aws_conf *aws.Config
   TestS3GenericRead_UnknownKey(ctx, new_conf, client)
   TestAllS3StoreReadWrite(ctx, new_conf, client, storage)
   TestAllS3StoreDelete(ctx, new_conf, client, storage)
-  DeleteBucketOrDie(ctx, client, Backup(new_conf).Aws.S3.StorageBucketName)
+  s3_common.DeleteBucketOrDie(ctx, client, Backup(new_conf).Aws.S3.StorageBucketName)
 }
 

@@ -19,7 +19,7 @@ type s3AdminStoreTester struct { *s3StoreReadWriteTester }
 
 func TestS3StorageSetup(ctx context.Context, conf *pb.Config, client *s3.Client, storage types.AdminBackupContent) {
   bucket := Backup(conf).Aws.S3.StorageBucketName
-  err := DeleteBucket(ctx, client, bucket)
+  err := s3_common.DeleteBucket(ctx, client, bucket)
 
   if err != nil {
     if !s3_common.IsS3Error(new(s3_types.NoSuchBucket), err) {
