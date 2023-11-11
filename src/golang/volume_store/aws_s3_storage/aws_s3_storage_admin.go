@@ -10,7 +10,6 @@ import (
   "btrfs_to_glacier/util"
   s3_common "btrfs_to_glacier/volume_store/aws_s3_common"
 
-  "github.com/aws/aws-sdk-go-v2/aws"
   "github.com/aws/aws-sdk-go-v2/service/s3"
   s3_types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
@@ -29,7 +28,7 @@ type s3StorageAdmin struct {
   rule_name_suffix        string
 }
 
-func NewBackupContentAdmin(conf *pb.Config, aws_conf *aws.Config, backup_name string,
+func NewBackupContentAdmin(conf *pb.Config, aws_conf types.AwsConf, backup_name string,
     codec types.Codec) (types.AdminBackupContent, error) {
   storage, err := NewBackupContent(conf, aws_conf, backup_name, codec)
   if err != nil { return nil, err }

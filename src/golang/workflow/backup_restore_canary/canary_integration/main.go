@@ -13,8 +13,9 @@ func main() {
   }
   linuxutil.DropRootOrDie()
 
-  InMemMain()
-  LocalFsMain(linuxutil)
+  //InMemMain()
+  //LocalFsMain(linuxutil)
+  AwsMain()
   util.Infof("ALL DONE")
 }
 

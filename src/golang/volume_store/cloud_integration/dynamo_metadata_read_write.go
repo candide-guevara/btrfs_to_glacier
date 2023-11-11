@@ -407,8 +407,8 @@ func (self *dynReadWriteTester) TestAllDynamoDbReadWrite(ctx context.Context) {
   self.TestListAllSnapshots_Multi(ctx)
 }
 
-func TestAllDynamoDbMetadata(ctx context.Context, conf *pb.Config, aws_conf *aws.Config) {
-  client := dynamodb.NewFromConfig(*aws_conf)
+func TestAllDynamoDbMetadata(ctx context.Context, conf *pb.Config, aws_conf types.AwsConf) {
+  client := dynamodb.NewFromConfig(*aws_conf.C)
   metadata, err := meta.NewAdminMetadata(conf, aws_conf, Backup(conf).Name)
   if err != nil { util.Fatalf("%v", err) }
   suite := &dynReadWriteTester{ Conf:conf, Client:client, Metadata:metadata, }

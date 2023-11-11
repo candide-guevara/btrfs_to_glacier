@@ -69,13 +69,13 @@ type s3Storage struct {
   *mem_only.BaseStorage
   Client     usedS3If
   Uploader   uploaderIf
-  aws_conf   *aws.Config
+  aws_conf   types.AwsConf
   common     *s3_common.S3Common
 }
 
-func NewBackupContent(conf *pb.Config, aws_conf *aws.Config, backup_name string,
+func NewBackupContent(conf *pb.Config, aws_conf types.AwsConf, backup_name string,
                 codec types.Codec) (types.BackupContent, error) {
-  client := s3.NewFromConfig(*aws_conf)
+  client := s3.NewFromConfig(*aws_conf.C)
   // Uploading a non-seekable stream, parallelism is useless
   uploader := s3mgr.NewUploader(client,
                                 func(u *s3mgr.Uploader) { u.LeavePartsOnError = false },

@@ -27,7 +27,7 @@ type dynamoAdminMetadata struct {
 }
 
 func NewAdminMetadata(
-    conf *pb.Config, aws_conf *aws.Config, backup_name string) (types.AdminMetadata, error) {
+    conf *pb.Config, aws_conf types.AwsConf, backup_name string) (types.AdminMetadata, error) {
   meta, err := NewMetadata(conf, aws_conf, backup_name)
   if err != nil { return nil, err }
   admin := &dynamoAdminMetadata{

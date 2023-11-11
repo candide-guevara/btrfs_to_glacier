@@ -45,7 +45,7 @@ type usedDynamoDbIf interface {
 
 type dynamoMetadata struct {
   conf     *pb.Config
-  aws_conf *aws.Config
+  aws_conf types.AwsConf
   tab_name string
   client   usedDynamoDbIf
   uuid_col string
@@ -65,11 +65,11 @@ type blobIterator struct {
   err      error
 }
 
-func NewMetadata(conf *pb.Config, aws_conf *aws.Config, backup_name string) (types.Metadata, error) {
+func NewMetadata(conf *pb.Config, aws_conf types.AwsConf, backup_name string) (types.Metadata, error) {
   meta := &dynamoMetadata{
     conf: conf,
     aws_conf: aws_conf,
-    client: dynamodb.NewFromConfig(*aws_conf),
+    client: dynamodb.NewFromConfig(*aws_conf.C),
     uuid_col: Uuid_col,
     type_col: Type_col,
     blob_col: Blob_col,

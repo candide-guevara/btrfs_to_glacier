@@ -10,8 +10,6 @@ import (
   "btrfs_to_glacier/util"
   s3_com "btrfs_to_glacier/volume_store/aws_s3_common"
   "btrfs_to_glacier/types"
-
-  "github.com/aws/aws-sdk-go-v2/aws"
 )
 
 func Backup(conf *pb.Config) *pb.Backup {
@@ -22,7 +20,7 @@ func Backup(conf *pb.Config) *pb.Backup {
 // * `K_ExperimentalUser` exists in .aws/config as explained in `encryption.TestOnlyAwsConfFromCredsFile`
 //   * IAM user must have root permissions on the test buckets and dynamo tables.
 // * `kRegion` is a valid aws region were the test infrastructure is locate.
-func LoadAwsConfForExperimentalUser(linuxutil types.Linuxutil) (*pb.Config, *aws.Config) {
+func LoadAwsConfForExperimentalUser(linuxutil types.Linuxutil) (*pb.Config, types.AwsConf) {
   const kMetaDynTab = "dynamodb.integration.test"
   conf := util.LoadTestConf()
   conf.Aws.Region = s3_com.K_ExperimentalRegion

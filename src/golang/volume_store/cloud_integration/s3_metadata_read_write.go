@@ -9,7 +9,6 @@ import (
   "btrfs_to_glacier/util"
   s3_common "btrfs_to_glacier/volume_store/aws_s3_common"
 
-  "github.com/aws/aws-sdk-go-v2/aws"
   "github.com/aws/aws-sdk-go-v2/service/s3"
 
   "github.com/google/uuid"
@@ -79,7 +78,7 @@ func (self *s3MetaReadWriteTester) TestPersistCurrentMetadataState_Add(ctx conte
   util.EqualsOrDie("Bad sequence", state.Sequences[0], new_seq)
 }
 
-func TestAllS3Metadata(ctx context.Context, conf *pb.Config, aws_conf *aws.Config) {
+func TestAllS3Metadata(ctx context.Context, conf *pb.Config, aws_conf types.AwsConf) {
   metadata, err := meta.NewMetadataAdmin(conf, aws_conf, Backup(conf).Name)
   if err != nil { util.Fatalf("%v", err) }
   client := meta.TestOnlyGetInnerClientToAvoidConsistencyFails(metadata)

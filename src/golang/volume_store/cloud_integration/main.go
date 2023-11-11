@@ -8,10 +8,9 @@ import (
 
   pb "btrfs_to_glacier/messages"
   "btrfs_to_glacier/shim"
+  "btrfs_to_glacier/types"
   "btrfs_to_glacier/util"
   "btrfs_to_glacier/volume_store/aws_s3_common"
-
-  "github.com/aws/aws-sdk-go-v2/aws"
 
   "google.golang.org/protobuf/proto"
 )
@@ -32,7 +31,7 @@ func main() {
   util.Infof("ALL DONE")
 }
 
-func TestCallerIdentity(ctx context.Context, conf *pb.Config, aws_conf *aws.Config) {
+func TestCallerIdentity(ctx context.Context, conf *pb.Config, aws_conf types.AwsConf) {
   var err error
   var id_int int
   var account_id string

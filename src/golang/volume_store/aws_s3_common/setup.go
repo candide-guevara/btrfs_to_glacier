@@ -7,9 +7,9 @@ import (
   "time"
 
   pb "btrfs_to_glacier/messages"
+  "btrfs_to_glacier/types"
   "btrfs_to_glacier/util"
 
-  "github.com/aws/aws-sdk-go-v2/aws"
   "github.com/aws/aws-sdk-go-v2/service/s3"
   "github.com/aws/aws-sdk-go-v2/aws/arn"
   "github.com/aws/aws-sdk-go-v2/service/sts"
@@ -32,7 +32,7 @@ type UsedS3If interface {
 
 type S3Common struct {
   Conf        *pb.Config
-  Aws_conf    *aws.Config
+  Aws_conf    types.AwsConf
   BackupConf  *pb.Backup_S3
   Client      UsedS3If
   BucketWait  time.Duration
@@ -40,7 +40,7 @@ type S3Common struct {
 }
 
 func NewS3Common(
-    conf *pb.Config, aws_conf *aws.Config, backup_name string, client UsedS3If) (*S3Common, error) {
+    conf *pb.Config, aws_conf types.AwsConf, backup_name string, client UsedS3If) (*S3Common, error) {
   common := &S3Common{
     Conf: conf,
     Aws_conf: aws_conf,
@@ -163,12 +163,12 @@ func (self *S3Common) locationConstraintFromConf() (s3_types.BucketLocationConst
                              self.Conf.Aws.Region)
 }
 
-func GetAccountId(ctx context.Context, aws_conf *aws.Config) (string, error) {
+func GetAccountId(ctx context.Context, aws_conf types.AwsConf) (string, error) {
   var err error
   var res_name arn.ARN
   var ident_out *sts.GetCallerIdentityOutput
 
-  client := sts.NewFromConfig(*aws_conf)
+  client := sts.NewFromConfig(*aws_conf.C)
   ident_in := &sts.GetCallerIdentityInput{}
   ident_out, err = client.GetCallerIdentity(ctx, ident_in)
   if err != nil { return "", err }

@@ -10,7 +10,6 @@ import (
   "btrfs_to_glacier/util"
   s3_common "btrfs_to_glacier/volume_store/aws_s3_common"
 
-  "github.com/aws/aws-sdk-go-v2/aws"
   "github.com/aws/aws-sdk-go-v2/service/s3"
   s3_types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 
@@ -30,7 +29,7 @@ type S3MetadataAdmin struct {
 }
 
 func NewMetadataAdmin(
-    conf *pb.Config, aws_conf *aws.Config, backup_name string) (types.AdminMetadata, error) {
+    conf *pb.Config, aws_conf types.AwsConf, backup_name string) (types.AdminMetadata, error) {
   metadata, err := NewMetadata(conf, aws_conf, backup_name)
   if err != nil { return nil, err }
 

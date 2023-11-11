@@ -65,7 +65,7 @@ func (self *StsClientMock) ExpectCreds() *aws.Credentials {
 
 func NewSessionTokenKeyring_ForTest(fixed_input string) (*SessionTokenKeyring, *StsClientMock) {
   sts_client := NewStsClientMock()
-  client_builder := func(cfg aws.Config) StsClientIf {
+  client_builder := func(cfg types.AwsConf) StsClientIf {
     return sts_client
   }
   input_prompt := func(string) (types.SecretString, error) {
@@ -156,7 +156,7 @@ func TestNewAwsConfigFromTempCreds(t *testing.T) {
   globalKeyring = *keyring
   aws_conf, err := NewAwsConfigFromTempCreds(ctx, conf, pb.Aws_BACKUP_WRITER)
   if err != nil { t.Fatalf("NewAwsConfigFromTempCreds: %v", err) }
-  aws_creds, err := aws_conf.Credentials.Retrieve(ctx)
+  aws_creds, err := aws_conf.C.Credentials.Retrieve(ctx)
   if err != nil { t.Fatalf("aws_conf.Credentials.Retrieve: %v", err) }
   util.EqualsOrFailTest(t, "Bad temp creds",
                         aws_creds.SessionToken, sts_client.ExpectCreds().SessionToken)

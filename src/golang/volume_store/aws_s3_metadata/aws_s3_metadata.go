@@ -13,7 +13,6 @@ import (
   s3_common "btrfs_to_glacier/volume_store/aws_s3_common"
   "btrfs_to_glacier/volume_store/mem_only"
 
-  "github.com/aws/aws-sdk-go-v2/aws"
   "github.com/aws/aws-sdk-go-v2/service/s3"
   s3_types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
@@ -37,15 +36,15 @@ type usedS3If interface {
 
 type S3Metadata struct {
   *mem_only.Metadata
-  AwsConf    *aws.Config
+  AwsConf    types.AwsConf
   Common     *s3_common.S3Common
   Client     usedS3If
   Key        string
 }
 
 func NewMetadata(
-    conf *pb.Config, aws_conf *aws.Config, backup_name string) (types.Metadata, error) {
-  client := s3.NewFromConfig(*aws_conf)
+    conf *pb.Config, aws_conf types.AwsConf, backup_name string) (types.Metadata, error) {
+  client := s3.NewFromConfig(*aws_conf.C)
   common, err := s3_common.NewS3Common(conf, aws_conf, backup_name, client)
   if err != nil { return nil, err }
 

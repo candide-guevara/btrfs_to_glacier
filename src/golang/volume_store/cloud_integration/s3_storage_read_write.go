@@ -14,7 +14,6 @@ import (
   "btrfs_to_glacier/types/mocks"
   "btrfs_to_glacier/util"
 
-  "github.com/aws/aws-sdk-go-v2/aws"
   "github.com/aws/aws-sdk-go-v2/service/s3"
   s3_types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 
@@ -319,7 +318,7 @@ func TestAllS3StoreReadWrite(ctx context.Context, conf *pb.Config, client *s3.Cl
   //suite.TestQueueRestoreObjects_AlreadyRestored(ctx, snowflake_bucket, snowflake_key)
 }
 
-func TestAllS3Storage(ctx context.Context, conf *pb.Config, aws_conf *aws.Config) {
+func TestAllS3Storage(ctx context.Context, conf *pb.Config, aws_conf types.AwsConf) {
   new_conf := proto.Clone(conf).(*pb.Config)
   // A bigger chunk, will make tests slow+expensive
   Backup(new_conf).Aws.S3.ChunkLen = 128*1024

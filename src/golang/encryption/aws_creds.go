@@ -22,7 +22,7 @@ type StsClientIf interface {
   GetSessionToken(context.Context,
     *sts.GetSessionTokenInput, ...func(*sts.Options)) (*sts.GetSessionTokenOutput, error)
 }
-type StsClientBuilderF = func(aws.Config) StsClientIf
+type StsClientBuilderF = func(types.AwsConf) StsClientIf
 
 type JsonPermCred struct {
   Version int
@@ -46,8 +46,8 @@ func NewSessionTokenKeyring() *SessionTokenKeyring {
     prompt_mes := fmt.Sprintf("Input password for AWS user '%s'", utype.String())
     return BuildPwPromt(prompt_mes)
   }
-  client_builder := func(cfg aws.Config) StsClientIf {
-    return sts.NewFromConfig(cfg)
+  client_builder := func(cfg types.AwsConf) StsClientIf {
+    return sts.NewFromConfig(*cfg.C)
   }
   return NewSessionTokenKeyringHelper(client_builder, pw_prompt, GetSecretMaterialVerbatim)
 }
@@ -93,15 +93,17 @@ func permAwsCredFromConf(
 }
 
 func (self *SessionTokenKeyring) CallAwsStsGetSessionToken(
-  ctx context.Context, conf *pb.Config, aws_perm_cred *aws.Credentials) (aws.Credentials, error) {
+  ctx context.Context, conf *pb.Config, cred *pb.Aws_Credential) (aws.Credentials, error) {
+  aws_perm_cred, err := permAwsCredFromConf(self.PwPrompt(cred.Type), cred)
+  if err != nil { return aws.Credentials{}, err }
   cfg, err := config.LoadDefaultConfig(
     ctx,
-    config.WithCredentialsProvider(credentials.StaticCredentialsProvider{*aws_perm_cred}),
+    config.WithCredentialsProvider(credentials.StaticCredentialsProvider{aws_perm_cred}),
     config.WithDefaultRegion(conf.Aws.Region),
   )
   if err != nil { return aws.Credentials{}, err }
 
-  client := self.StsClientBuilder(cfg)
+  client := self.StsClientBuilder(types.AwsConf{&cfg, cred.Key})
   var expire int32 = int32(self.Duration.Seconds())
   rq := &sts.GetSessionTokenInput{ DurationSeconds: &expire, }
   rs, err := client.GetSessionToken(ctx, rq)
@@ -124,9 +126,7 @@ func (self *SessionTokenKeyring) GetSessionTokenFor(
   if token, found := self.Keyring[cred.Type]; found {
     if !self.ShouldRefresh(&token) { return token, nil }
   }
-  aws_perm_cred, err := permAwsCredFromConf(self.PwPrompt(cred.Type), cred)
-  if err != nil { return aws.Credentials{}, err }
-  aws_temp_cred, err := self.CallAwsStsGetSessionToken(ctx, conf, &aws_perm_cred)
+  aws_temp_cred, err := self.CallAwsStsGetSessionToken(ctx, conf, cred)
   if err != nil { return aws.Credentials{}, err }
   self.Keyring[cred.Type] = aws_temp_cred
   return aws_temp_cred, nil
@@ -156,17 +156,17 @@ func (self *SessionTokenKeyring) EncryptAwsCreds(utype pb.Aws_UserType) (*pb.Aws
 }
 
 func NewAwsConfigFromTempCreds(
-    ctx context.Context, conf *pb.Config, utype pb.Aws_UserType) (*aws.Config, error) {
+    ctx context.Context, conf *pb.Config, utype pb.Aws_UserType) (types.AwsConf, error) {
   cred, err := util.AwsCredPerUserType(conf, utype)
-  if err != nil { return nil, err }
+  if err != nil { return types.AwsConf{}, err }
   token, err := globalKeyring.GetSessionTokenFor(ctx, conf, cred)
-  if err != nil { return nil, err }
+  if err != nil { return types.AwsConf{}, err }
   cfg, err := config.LoadDefaultConfig(
     ctx,
     config.WithCredentialsProvider(credentials.StaticCredentialsProvider{token}),
     config.WithDefaultRegion(conf.Aws.Region),
   )
-  return &cfg, err
+  return types.AwsConf{&cfg, cred.Key}, err
 }
 
 // You need to first go the IAM console, revoke the old key and create a new one.
@@ -175,7 +175,7 @@ func EncryptAwsCreds(utype pb.Aws_UserType) (*pb.Aws_Credential, error) {
 }
 
 func TestOnlyAwsConfFromPlainKey(
-    conf *pb.Config, access_key string, secret_key string, session string) (*aws.Config, error) {
+    conf *pb.Config, access_key string, secret_key string, session string) (types.AwsConf, error) {
   creds := credentials.StaticCredentialsProvider{
     Value: aws.Credentials{
       AccessKeyID: access_key,
@@ -188,7 +188,7 @@ func TestOnlyAwsConfFromPlainKey(
     config.WithCredentialsProvider(creds),
     config.WithDefaultRegion(conf.Aws.Region),
   )
-  return &cfg, err
+  return types.AwsConf{&cfg, secret_key}, err
 }
 
 // Pre-requisite:
@@ -198,12 +198,12 @@ func TestOnlyAwsConfFromPlainKey(
 // output = json
 // credential_process = bash -c 'gpg --quiet --decrypt ~/.aws/some_dude.gpg'
 func TestOnlyAwsConfFromCredsFile(
-    ctx context.Context, conf *pb.Config, homedir string, profile string) (*aws.Config, error) {
+    ctx context.Context, conf *pb.Config, homedir string, profile string) (types.AwsConf, error) {
   path := fpmod.Join(homedir, ".aws/config")
   cfg, err :=  config.LoadDefaultConfig(ctx,
                                         config.WithDefaultRegion(conf.Aws.Region),
                                         config.WithSharedConfigProfile(profile),
                                         config.WithSharedConfigFiles([]string{path}))
-  return &cfg, err
+  return types.AwsConf{&cfg, profile}, err
 }
 
