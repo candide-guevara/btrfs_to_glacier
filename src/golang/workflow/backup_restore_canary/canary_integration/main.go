@@ -15,7 +15,7 @@ func main() {
 
   //InMemMain()
   //LocalFsMain(linuxutil)
-  AwsMain()
+  AwsMain(linuxutil)
   util.Infof("ALL DONE")
 }
 

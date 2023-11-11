@@ -5,10 +5,11 @@ option go_package = "./messages";
 message Aws {
   enum UserType {
     INVALID = 0;
-    BACKUP_WRITER = 1;
-    BACKUP_READER = 2;
-    BACKUP_CANARY = 3;
-    BACKUP_ROOT = 4;
+    BACKUP_EXPERIMENTAL = 1;
+    BACKUP_CANARY = 2;
+    BACKUP_READER = 3;
+    BACKUP_WRITER = 4;
+    BACKUP_ROOT = 5;
   }
   // Only use `Credential.key` to get temporal credentials and then discard it.
   // Example json temporal credentials:

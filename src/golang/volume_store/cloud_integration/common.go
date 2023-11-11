@@ -18,8 +18,8 @@ func Backup(conf *pb.Config) *pb.Backup {
 
 // Pre-requisites
 // * `K_ExperimentalUser` exists in .aws/config as explained in `encryption.TestOnlyAwsConfFromCredsFile`
-//   * IAM user must have root permissions on the test buckets and dynamo tables.
-// * `kRegion` is a valid aws region were the test infrastructure is locate.
+// * `K_ExperimentalUser` IAM user must have root permissions on the test buckets and dynamo tables.
+// * `K_ExperimentalRegion` is a valid aws region were the test infrastructure is locate.
 func LoadAwsConfForExperimentalUser(linuxutil types.Linuxutil) (*pb.Config, types.AwsConf) {
   const kMetaDynTab = "dynamodb.integration.test"
   conf := util.LoadTestConf()
