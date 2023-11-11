@@ -249,7 +249,10 @@ func (self *btrfsUtilImpl) StartSendStream(
   // `--proto=0` uses the latest version protocol (depends on running linux and btrfs-progs versions).
   // Note: option `--compressed-data` is useless since it applies only if the btrfs filesystem
   // uses transparent compression of files. It does not influence whether btrfs-send will compress the stream.
-  args = append(args, "send", "--proto=0")
+  // BE CAREFUL IT IS A TRAP !
+  // WTF btrfs broke itself? version 2 is f*cked, `--proto=0` does nto work anymore:
+  // https://github.com/kdave/btrfs-progs/commit/bb7db09e466f300b0bc52c34114663b5e967b4b3
+  args = append(args, "send", "--proto=1")
   if no_data {
     args = append(args, "--no-data")
   }
