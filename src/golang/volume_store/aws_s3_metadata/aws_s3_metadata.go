@@ -44,7 +44,7 @@ type S3Metadata struct {
 
 func NewMetadata(
     conf *pb.Config, aws_conf types.AwsConf, backup_name string) (types.Metadata, error) {
-  client := s3.NewFromConfig(*aws_conf.C)
+  client := s3_common.GetS3Singleton(aws_conf)
   common, err := s3_common.NewS3Common(conf, aws_conf, backup_name, client)
   if err != nil { return nil, err }
 

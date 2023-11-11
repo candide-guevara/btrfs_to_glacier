@@ -4,6 +4,7 @@ import (
   "context"
   "errors"
   "fmt"
+  "sync"
   "time"
 
   pb "btrfs_to_glacier/messages"
@@ -37,6 +38,31 @@ type S3Common struct {
   Client      UsedS3If
   BucketWait  time.Duration
   AccountId   string
+}
+
+var kS3Clients map[string]*s3.Client
+var kS3ClientsMutex sync.Mutex
+
+func init() {
+  kS3Clients = make(map[string]*s3.Client)
+}
+
+// Although operations on objects have read-after-write consistency, that does not apply to buckets.
+// Deleting and creating buckets in quick succession and reading objects on that bucket
+// with a **different client object** may return NoSuchBucket errors.
+// https://docs.aws.amazon.com/AmazonS3/latest/userguide/Welcome.html#ConsistencyModel
+//
+// Any client object in aws v2 API is designed to be thread safe.
+// https://aws.github.io/aws-sdk-go-v2/docs/making-requests/#concurrently-using-service-clients
+func GetS3Singleton(aws_conf types.AwsConf) *s3.Client {
+  kS3ClientsMutex.Lock()
+  defer kS3ClientsMutex.Unlock()
+  client, ok := kS3Clients[aws_conf.Id]
+  if !ok {
+    client = s3.NewFromConfig(*aws_conf.C)
+    kS3Clients[aws_conf.Id] = client
+  }
+  return client
 }
 
 func NewS3Common(

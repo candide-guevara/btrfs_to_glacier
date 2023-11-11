@@ -109,18 +109,6 @@ func (self *s3StorageAdmin) TearDownBackupContent(ctx context.Context) error {
   return nil //noop
 }
 
-// Although operations on objects have read-after-write consistency, that does not apply to buckets.
-// Deleting and creating buckets in quick succession and reading objects on that bucket
-// with a **different client object** may return NoSuchBucket errors.
-// https://docs.aws.amazon.com/AmazonS3/latest/userguide/Welcome.html#ConsistencyModel
-func TestOnlyGetInnerClientToAvoidConsistencyFails(storage types.BackupContent) *s3.Client {
-  s3_impl,ok := storage.(*s3StorageAdmin)
-  if !ok { util.Fatalf("called with the wrong impl") }
-  client,ok := s3_impl.Client.(*s3.Client)
-  if !ok { util.Fatalf("storage does not contain a real aws client") }
-  return client
-}
-
 func TestOnlySwapConf(storage types.BackupContent, conf *pb.Config) func() {
   s3_impl,ok := storage.(*s3StorageAdmin)
   if !ok { util.Fatalf("called with the wrong impl: %v", storage) }

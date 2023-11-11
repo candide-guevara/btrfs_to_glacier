@@ -117,16 +117,6 @@ func (self *S3MetadataAdmin) createLifecycleRule(
   return nil
 }
 
-// see `TestOnlyGetInnerClientToAvoidConsistencyFails` for s3 storage.
-func TestOnlyGetInnerClientToAvoidConsistencyFails(metadata types.Metadata) *s3.Client {
-  if metadata == nil { util.Fatalf("metadata == nil") }
-  s3_impl,ok := metadata.(*S3MetadataAdmin)
-  if !ok { util.Fatalf("called with the wrong impl") }
-  client,ok := s3_impl.Client.(*s3.Client)
-  if !ok { util.Fatalf("storage does not contain a real aws client") }
-  return client
-}
-
 func TestOnlySetInnerState(metadata types.Metadata, state *pb.AllMetadata) {
   if metadata == nil { util.Fatalf("metadata == nil") }
   s3_impl,ok := metadata.(*S3MetadataAdmin)

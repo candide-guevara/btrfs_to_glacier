@@ -81,7 +81,7 @@ func (self *s3MetaReadWriteTester) TestPersistCurrentMetadataState_Add(ctx conte
 func TestAllS3Metadata(ctx context.Context, conf *pb.Config, aws_conf types.AwsConf) {
   metadata, err := meta.NewMetadataAdmin(conf, aws_conf, Backup(conf).Name)
   if err != nil { util.Fatalf("%v", err) }
-  client := meta.TestOnlyGetInnerClientToAvoidConsistencyFails(metadata)
+  client := s3_common.GetS3Singleton(aws_conf)
 
   suite := s3MetaAdminTester {
     &s3MetaReadWriteTester{ Conf: conf, Client: client, Metadata: metadata, },

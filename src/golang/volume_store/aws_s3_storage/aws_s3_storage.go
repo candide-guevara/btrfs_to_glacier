@@ -43,7 +43,6 @@ const (
 // The subset of the s3 client used.
 // Convenient for unittesting purposes.
 type usedS3If interface {
-  s3_common.UsedS3If
   DeleteObjects(context.Context, *s3.DeleteObjectsInput, ...func(*s3.Options)) (*s3.DeleteObjectsOutput, error)
   GetObject    (context.Context, *s3.GetObjectInput,     ...func(*s3.Options)) (*s3.GetObjectOutput, error)
   HeadObject   (context.Context, *s3.HeadObjectInput,    ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
@@ -75,7 +74,7 @@ type s3Storage struct {
 
 func NewBackupContent(conf *pb.Config, aws_conf types.AwsConf, backup_name string,
                 codec types.Codec) (types.BackupContent, error) {
-  client := s3.NewFromConfig(*aws_conf.C)
+  client := s3_common.GetS3Singleton(aws_conf)
   // Uploading a non-seekable stream, parallelism is useless
   uploader := s3mgr.NewUploader(client,
                                 func(u *s3mgr.Uploader) { u.LeavePartsOnError = false },
