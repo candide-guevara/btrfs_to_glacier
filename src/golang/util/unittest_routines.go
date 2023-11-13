@@ -3,7 +3,6 @@ package util
 import (
   "context"
   "encoding/base64"
-  "encoding/json"
   "fmt"
   "math/rand"
   "strings"
@@ -12,13 +11,6 @@ import (
 
   "btrfs_to_glacier/types"
 )
-
-func AsJson(val interface{}) string {
-  switch s := val.(type) { case string: return s }
-  str, err := json.MarshalIndent(val, "", "  ")
-  if err != nil { Fatalf("cannot marshal to json string: %v", err) }
-  return string(str)
-}
 
 func asJsonStrings(val interface{}, expected interface{}) (string, string) {
   return AsJson(val), AsJson(expected)

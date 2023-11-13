@@ -1,6 +1,7 @@
 package util
 
 import (
+  "encoding/json"
   "fmt"
   "log"
   "runtime"
@@ -8,6 +9,13 @@ import (
   "google.golang.org/protobuf/proto"
   "google.golang.org/protobuf/encoding/prototext"
 )
+
+func AsJson(val interface{}) string {
+  switch s := val.(type) { case string: return s }
+  str, err := json.MarshalIndent(val, "", "  ")
+  if err != nil { Fatalf("cannot marshal to json string: %v", err) }
+  return string(str)
+}
 
 // Like Sprintf but for all protobuf.
 // Nicer than simply using '%v'
