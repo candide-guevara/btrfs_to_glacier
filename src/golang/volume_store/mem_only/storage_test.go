@@ -48,7 +48,6 @@ func buildTestStorageWithChunkLen(t *testing.T, chunk_len uint64) (*Storage, *Ch
 
 func buildTestCodec(t *testing.T) types.Codec {
   // see encryption/aes_gzip_codec_test.go
-  const dummy_pw = "chocolat"
   const persisted_key_1 = "OC0aSSg2woV0bUfw0Ew1+ej5fYCzzIPcTnqbtuKXzk8="
 
   conf := util.LoadTestConf()

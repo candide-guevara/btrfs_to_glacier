@@ -18,6 +18,10 @@ import (
   "golang.org/x/crypto/ssh/terminal"
 )
 
+const K_TestPassword = "chocolat"
+const K_TestPassword2 = "mr_monkey"
+
+// See note in `types.PwPromptF` about different types of passwords.
 func BuildPwPromt(mes string) types.PwPromptF {
   prompt := func() (types.SecretKey, error) {
     null_key := types.SecretKey{[]byte("")}
@@ -52,14 +56,12 @@ func GetSecretMaterialVerbatim(mes string) (types.SecretString, error) {
 }
 
 func TestOnlyFixedPw() (types.SecretKey, error) {
-  // xor_key=`sha256sum <(echo -n "chocolat") | cut -f1 -d' ' | sed -r 's/(..)/\\\\x\1/g'`
-  const dummy_pw = "chocolat"
-  return BytesToXorKey([]byte(dummy_pw)), nil
+  // xor_key=`sha256sum <(echo -n "K_TestPassword") | cut -f1 -d' ' | sed -r 's/(..)/\\\\x\1/g'`
+  return BytesToXorKey([]byte(K_TestPassword)), nil
 }
 
 func TestOnlyAnotherPw() (types.SecretKey, error) {
-  const dummy_pw = "mr_monkey"
-  return BytesToXorKey([]byte(dummy_pw)), nil
+  return BytesToXorKey([]byte(K_TestPassword2)), nil
 }
 
 func BytesToXorKey(pw []byte) types.SecretKey {

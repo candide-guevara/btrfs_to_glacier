@@ -15,6 +15,8 @@ type SecretString struct { S string }
 var CurKeyFp = PersistableString{""}
 
 // Returns the hashed content from a passphrase input by the user.
+// Note that there may be more than one password needed for a workflow.
+// For example you should have a separate password for encrypting the AWS credentials and the backup content.
 type PwPromptF = func() (SecretKey, error)
 
 // Not thread-safe, `CreateNewEncryptionKey` may cause concurrent streams to be de/encrypted with different keys.

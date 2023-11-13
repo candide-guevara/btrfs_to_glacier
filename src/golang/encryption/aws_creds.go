@@ -43,7 +43,8 @@ var globalKeyring SessionTokenKeyring
 
 func NewSessionTokenKeyring() *SessionTokenKeyring {
   pw_prompt := func(utype pb.Aws_UserType) types.PwPromptF {
-    prompt_mes := fmt.Sprintf("Input password for AWS user '%s'", utype.String())
+    prompt_mes := fmt.Sprintf("Input password for AWS user '%s': ", utype.String())
+    if utype == pb.Aws_BACKUP_EXPERIMENTAL { return TestOnlyFixedPw }
     return BuildPwPromt(prompt_mes)
   }
   client_builder := func(cfg types.AwsConf) StsClientIf {
