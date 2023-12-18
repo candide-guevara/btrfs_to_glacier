@@ -13,8 +13,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.21.5
 	github.com/aws/smithy-go v1.14.2
 	github.com/google/uuid v1.3.1
-	golang.org/x/crypto v0.13.0
-	golang.org/x/sys v0.12.0
+	golang.org/x/crypto v0.17.0
+	golang.org/x/sys v0.15.0
 	google.golang.org/protobuf v1.31.0
 )
 
@@ -35,5 +35,5 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.13.6 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.15.6 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
-	golang.org/x/term v0.12.0 // indirect
+	golang.org/x/term v0.15.0 // indirect
 )
